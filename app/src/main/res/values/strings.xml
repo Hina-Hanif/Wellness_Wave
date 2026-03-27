@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Wellness Wave</string>
+    <string name="accessibility_service_description">Monitors behavioral traits like typing rhythm and scrolling for mental health insights. No text content is recorded.</string>
+</resources>

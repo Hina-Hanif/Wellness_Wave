@@ -1,0 +1,30 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Temp build logs
+build_result.txt
+error_log.txt
+error_log2.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+wellness_wave_backend/__pycache__/
+wellness_wave_backend/venv/
+wellness_wave_backend/.env

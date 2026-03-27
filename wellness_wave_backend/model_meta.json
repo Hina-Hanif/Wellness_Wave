@@ -1,0 +1,22 @@
+{
+    "version": "3.0.0",
+    "features": [
+        "screen_time",
+        "unlock_count",
+        "night_ratio",
+        "scrolling_speed_avg",
+        "scroll_erraticness",
+        "app_switch_count_per_hour",
+        "typing_cps",
+        "typing_hesitation_ms",
+        "typing_pauses_count",
+        "max_typing_pause_ms",
+        "notification_response_sec"
+    ],
+    "accuracy_estimate": 0.94,
+    "labels": [
+        "High",
+        "Low",
+        "Medium"
+    ]
+}
