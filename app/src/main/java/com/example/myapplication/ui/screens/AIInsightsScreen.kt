@@ -31,14 +31,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.api.RetrofitClient
 import com.example.myapplication.models.PredictionResponse
+import com.example.myapplication.data.UsageDataManager
+import com.example.myapplication.models.UsageMetrics
+import com.example.myapplication.data.analysis.BehavioralInferenceEngine
+import com.example.myapplication.data.analysis.MentalStateReport
+import com.example.myapplication.data.tracking.BehavioralAccessibilityService
+import com.example.myapplication.data.tracking.NotificationReactionTracker
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 @Composable
 fun AIInsightsScreen(innerPadding: PaddingValues) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var prediction by remember { mutableStateOf<PredictionResponse?>(null) }
+    var localReport by remember { mutableStateOf<MentalStateReport?>(null) }
     var isLoading by remember { mutableStateOf(true) }
+    var todayMetrics by remember { mutableStateOf<UsageMetrics?>(null) }
+    
+    val typingCps by BehavioralAccessibilityService.typingCps.collectAsState()
+    val scrollVelocity by BehavioralAccessibilityService.scrollVelocityAvg.collectAsState()
+    val scrollErraticness by BehavioralAccessibilityService.scrollErraticness.collectAsState()
+    val appSwitches by BehavioralAccessibilityService.switchCount.collectAsState()
+    
+    val manager = remember { UsageDataManager(context) }
+    
+    LaunchedEffect(typingCps, scrollVelocity, scrollErraticness, appSwitches) {
+        // Fetch current daily metrics (Mood was removed as signals take priority)
+        todayMetrics = manager.getDailyMetrics()
+        todayMetrics?.let {
+            localReport = BehavioralInferenceEngine.analyze(it)
+        }
+    }
 
     LaunchedEffect(Unit) {
         scope.launch {
@@ -81,9 +106,15 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
             Spacer(modifier = Modifier.height(32.dp))
 
             // Current Stress Level Progress Bar Card
-            StressMeterCard(prediction = prediction, isLoading = isLoading)
+            StressMeterCard(prediction = prediction, localReport = localReport, isLoading = isLoading)
 
             Spacer(modifier = Modifier.height(32.dp))
+            
+            // Behavioral Analysis Detail Section (Grid of 4 Mental States)
+            if (localReport != null) {
+                BehavioralAnalysisCard(report = localReport!!)
+                Spacer(modifier = Modifier.height(32.dp))
+            }
 
             Text(
                 text = "PERSONALIZED SUGGESTIONS",
@@ -97,7 +128,7 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
         }
 
         // Dynamic Suggestions based on 4-Dimensional AI Output
-        val suggestions = generateSuggestions(prediction)
+        val suggestions = generateSuggestions(prediction, localReport)
         
         items(suggestions) { suggestion ->
             SuggestionCard(suggestion = suggestion)
@@ -111,14 +142,17 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
 }
 
 @Composable
-fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
+fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateReport?, isLoading: Boolean) {
+    // Priority: Local Behavioral Analysis (v7) > Remote Prediction > Default "Balanced"
+    val primaryText = localReport?.primaryState ?: prediction?.stress_level ?: (if (isLoading) "Analyzing..." else "Balanced")
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -133,7 +167,7 @@ fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Current State",
+                        text = "Current Overall Mental Health State",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -145,7 +179,7 @@ fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
-                        text = if (isLoading) "Analyzing..." else (prediction?.stress_level ?: "Balanced"),
+                        text = primaryText,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelSmall,
@@ -156,12 +190,14 @@ fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Map Stress Level string to a float between 0 and 1
-            val targetProgress = when (prediction?.stress_level) {
-                "Low" -> 0.2f
-                "Medium" -> 0.5f
-                "High" -> 0.9f
-                else -> 0.2f
+            // Determine Overall Level from calibrated engine
+            val currentLevel = localReport?.overallLevel ?: "Low"
+
+            val targetProgress = when (currentLevel) {
+                "Low" -> 0.25f
+                "Medium" -> 0.55f
+                "High" -> 0.95f
+                else -> 0.25f
             }
 
             val animatedProgress by animateFloatAsState(
@@ -208,14 +244,7 @@ fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
             Spacer(modifier = Modifier.height(24.dp))
             
             Text(
-                text = "Model Feedback",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = prediction?.real_time_feedback ?: "Keep up the good habits. Your digital metrics look stable.",
+                text = localReport?.overallSummary ?: prediction?.real_time_feedback ?: "Keep up the good habits. Your digital metrics look stable.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -223,10 +252,131 @@ fun StressMeterCard(prediction: PredictionResponse?, isLoading: Boolean) {
     }
 }
 
+@Composable
+fun BehavioralAnalysisCard(report: MentalStateReport) {
+    Column {
+        Text(
+            text = "BEHAVIORAL MENTAL STATES",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f)) {
+                MentalStateGridItem(
+                    label = "Stress",
+                    level = report.stressLevel,
+                    insight = report.stressInsight,
+                    icon = Icons.Rounded.AutoAwesome
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                MentalStateGridItem(
+                    label = "Anxiety",
+                    level = report.anxietyLevel,
+                    insight = report.anxietyInsight,
+                    icon = Icons.Rounded.SelfImprovement
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f)) {
+                MentalStateGridItem(
+                    label = "Burnout",
+                    level = report.burnoutLevel,
+                    insight = report.burnoutInsight,
+                    icon = Icons.Rounded.BatteryAlert
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                MentalStateGridItem(
+                    label = "Addiction",
+                    level = report.addictionLevel,
+                    insight = report.addictionInsight,
+                    icon = Icons.Rounded.Warning
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MentalStateGridItem(label: String, level: String, insight: String, icon: ImageVector) {
+    val levelColor = when(level) {
+        "High" -> Color(0xFFFF5252)
+        "Medium" -> Color(0xFFFFB300)
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = levelColor.copy(alpha = 0.1f),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(imageVector = icon, contentDescription = null, tint = levelColor, modifier = Modifier.size(18.dp))
+                    }
+                }
+                
+                Surface(
+                    color = levelColor.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = level, 
+                        style = MaterialTheme.typography.labelSmall, 
+                        fontWeight = FontWeight.ExtraBold, 
+                        color = levelColor,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = insight,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                lineHeight = 14.sp
+            )
+        }
+    }
+}
+
 data class Suggestion(val title: String, val description: String, val icon: ImageVector, val color: Color)
 
-fun generateSuggestions(prediction: PredictionResponse?): List<Suggestion> {
-    if (prediction == null) {
+fun generateSuggestions(prediction: PredictionResponse?, localReport: MentalStateReport?): List<Suggestion> {
+    if (prediction == null && localReport == null) {
         return listOf(
             Suggestion("2-Minute Breathing", "A quick exercise to center your focus.", Icons.Rounded.Spa, Color(0xFF61D0C9)),
             Suggestion("Screen Break", "Step away for 5 minutes.", Icons.Rounded.DirectionsRun, Color(0xFF6888F9))
@@ -235,29 +385,34 @@ fun generateSuggestions(prediction: PredictionResponse?): List<Suggestion> {
     
     val list = mutableListOf<Suggestion>()
     
-    if (prediction.addiction_detected) {
-        list.add(Suggestion("Device Detox", "You've unlocked your phone frequently. Try placing it in another room for 30 minutes.", Icons.Rounded.Warning, Color(0xFFFF5252)))
+    // Check Levels from Local Analysis (High priority)
+    val addiction = localReport?.addictionLevel ?: "Low"
+    if (addiction != "Low") {
+        list.add(Suggestion("Device Placement", "Place your phone in another room to reduce reflexive unlocks.", Icons.Rounded.Warning, if (addiction == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
     }
     
-    if (prediction.burnout_detected) {
-        list.add(Suggestion("Digital Sunset", "You're showing signs of burnout and late-night usage. Enable Wind Down at 9 PM.", Icons.Rounded.BatteryAlert, Color(0xFFFFB300)))
+    val burnout = localReport?.burnoutLevel ?: "Low"
+    if (burnout != "Low") {
+        list.add(Suggestion("Digital Sunset", "You're showing fatigue. Enable Night Mode and put away screens 1 hour before bed.", Icons.Rounded.BatteryAlert, if (burnout == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
     }
     
-    if (prediction.anxiety_detected) {
-        list.add(Suggestion("Mindful Scrolling", "Your interactions are erratic. Pause and take 3 deep breaths before reopening social apps.", Icons.Rounded.SelfImprovement, Color(0xFF6888F9)))
+    val anxiety = localReport?.anxietyLevel ?: "Low"
+    if (anxiety != "Low") {
+        list.add(Suggestion("Interaction Pause", "Frequent pauses detected. Take 3 deep breaths and focus on a single physical object.", Icons.Rounded.SelfImprovement, if (anxiety == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
     }
     
-    if (prediction.stress_level == "High" && !prediction.burnout_detected) {
-        list.add(Suggestion("Short Walk", "Step outside to lower your cortisol levels.", Icons.Rounded.DirectionsRun, Color(0xFF61D0C9)))
+    val stress = localReport?.stressLevel ?: "Low"
+    if (stress != "Low") {
+        list.add(Suggestion("Physical Anchor", "High interaction arousal detected. A 5-minute walk will help lower your physiological stress.", Icons.Rounded.DirectionsRun, if (stress == "High") Color(0xFFFF5252) else Color(0xFF61D0C9)))
     }
     
     // Default positive if no major flags
-    if (list.isEmpty()) {
-        list.add(Suggestion("Keep it up!", "Your usage is highly balanced. Consider reading a book instead of scrolling tonight.", Icons.Rounded.AutoAwesome, Color(0xFF61D0C9)))
-        list.add(Suggestion("Digital Wind Down", "A gentle reminder to put away devices 30 mins before sleep.", Icons.Rounded.Nightlight, Color(0xFF6888F9)))
+    if (list.size < 2) {
+        list.add(Suggestion("Flow State", "Your typing and scrolling rhythm indicate a healthy flow. Stay focused!", Icons.Rounded.AutoAwesome, Color(0xFF61D0C9)))
+        list.add(Suggestion("Sleep Hygiene", "Reading a physical book tonight would be a great way to wind down.", Icons.Rounded.Nightlight, Color(0xFF6888F9)))
     }
     
-    return list
+    return list.take(4) // Top 4 most relevant suggestions
 }
 
 @Composable

@@ -13,7 +13,7 @@ class UsageDataManager(private val context: Context) {
 
     private val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-    fun getDailyMetrics(moodScore: Int): UsageMetrics {
+    fun getDailyMetrics(moodScore: Int = 0): UsageMetrics {
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
         
@@ -90,6 +90,8 @@ class UsageDataManager(private val context: Context) {
             (totalScreenTimeMs.toFloat() / avgScreenTime.toFloat()).coerceIn(0.5f, 1.5f)
         } else 1.0f
 
+        val activeHours = (TimeUnit.MILLISECONDS.toHours(totalScreenTimeMs)).coerceAtLeast(1L)
+        
         return UsageMetrics(
             user_id = userId,
             date = dateString,
@@ -106,7 +108,7 @@ class UsageDataManager(private val context: Context) {
             typing_hesitation_ms = BehavioralAccessibilityService.typingHesitationMs.value,
             backspace_rate = BehavioralAccessibilityService.backspaceCount.value.toFloat(),
             notification_response_sec = NotificationReactionTracker.averageResponseSec.value,
-            app_switch_count_per_hour = totalAppSwitches / 24,
+            app_switch_count_per_hour = (totalAppSwitches / activeHours).toInt(),
             usage_consistency_shift = shift,
             typing_pauses_count = BehavioralAccessibilityService.typingPausesCount.value,
             max_typing_pause_ms = BehavioralAccessibilityService.maxTypingPauseMs.value,

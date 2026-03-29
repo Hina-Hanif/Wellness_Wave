@@ -110,6 +110,30 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
         }
     }
 
+    // New: Track and Clear Wellness Badge
+    var hasUnreadWellness by remember { 
+        mutableStateOf(sharedPrefs.getBoolean("has_unread_reminder", false)) 
+    }
+    
+    // Watch for unread flag changes in SharedPreferences
+    LaunchedEffect(Unit) {
+        while(true) {
+            val unread = sharedPrefs.getBoolean("has_unread_reminder", false)
+            if (hasUnreadWellness != unread) {
+                hasUnreadWellness = unread
+            }
+            kotlinx.coroutines.delay(2000) // Poll every 2s
+        }
+    }
+
+    // Clear badge when visiting Mindfulness
+    LaunchedEffect(currentDestination) {
+        if (currentDestination == AppDestinations.MINDFULNESS) {
+            sharedPrefs.edit().putBoolean("has_unread_reminder", false).apply()
+            hasUnreadWellness = false
+        }
+    }
+
     if (currentDestination == AppDestinations.ONBOARDING) {
         OnboardingScreen(PaddingValues(0.dp)) {
             sharedPrefs.edit().putBoolean("is_first_time", false).apply()
@@ -134,7 +158,11 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
                         NavItem(AppDestinations.ANALYTICS, currentDestination) { currentDestination = it }
                         NavItem(AppDestinations.INSIGHTS, currentDestination) { currentDestination = it }
                         NavItem(AppDestinations.TRENDS, currentDestination) { currentDestination = it }
-                        NavItem(AppDestinations.MINDFULNESS, currentDestination) { currentDestination = it }
+                        NavItem(
+                            AppDestinations.MINDFULNESS, 
+                            currentDestination, 
+                            showBadge = hasUnreadWellness
+                        ) { currentDestination = it }
                     }
                 }
             }
@@ -156,6 +184,7 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
 fun RowScope.NavItem(
     destination: AppDestinations,
     currentDestination: AppDestinations,
+    showBadge: Boolean = false,
     onSelect: (AppDestinations) -> Unit
 ) {
     val selected = destination == currentDestination
@@ -169,12 +198,25 @@ fun RowScope.NavItem(
             onClick = { onSelect(destination) },
             modifier = Modifier.size(48.dp)
         ) {
-            Icon(
-                destination.icon,
-                contentDescription = destination.label,
-                modifier = Modifier.size(28.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Box {
+                Icon(
+                    destination.icon,
+                    contentDescription = destination.label,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (showBadge) {
+                    Surface(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-2).dp),
+                        shape = CircleShape,
+                        color = Color.Red,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.surface)
+                    ) {}
+                }
+            }
         }
         Text(
             text = destination.label,

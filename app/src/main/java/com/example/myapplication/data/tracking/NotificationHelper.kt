@@ -114,6 +114,26 @@ object NotificationHelper {
         nm.notify("screen_time".hashCode(), notif)
     }
 
+    fun sendHourlyReminder(context: Context, message: String) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        ensureChannel(nm, CHANNEL_WELLNESS, CHANNEL_NAME_WELLNESS, NotificationManager.IMPORTANCE_DEFAULT)
+
+        val pi = buildMainPendingIntent(context, "MINDFULNESS")
+        
+        val notif = NotificationCompat.Builder(context, CHANNEL_WELLNESS)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentTitle("🧘 Gentle Reminder")
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .setColor(0xFF03DAC5.toInt()) // Teal
+            .build()
+
+        nm.notify("hourly_reminder".hashCode(), notif)
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
     private data class WellnessContent(val emoji: String, val title: String, val tip: String)
 

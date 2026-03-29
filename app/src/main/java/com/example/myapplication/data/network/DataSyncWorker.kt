@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.myapplication.api.RetrofitClient
 import com.example.myapplication.data.UsageDataManager
+import com.example.myapplication.data.analysis.ReminderRepository
 import com.example.myapplication.data.tracking.NotificationHelper
 import java.util.concurrent.TimeUnit
 
@@ -14,6 +15,16 @@ class DataSyncWorker(context: Context, params: WorkerParameters) : CoroutineWork
     override suspend fun doWork(): Result {
         val usageDataManager = UsageDataManager(applicationContext)
         val api = RetrofitClient.instance
+        val prefs = applicationContext.getSharedPreferences("wellness_wave_prefs", Context.MODE_PRIVATE)
+
+        // Trigger hourly reminder
+        val nextMessage = ReminderRepository.getNextReminder(applicationContext)
+        prefs.edit()
+            .putString("current_hourly_reminder", nextMessage)
+            .putBoolean("has_unread_reminder", true)
+            .apply()
+        
+        NotificationHelper.sendHourlyReminder(applicationContext, nextMessage)
 
         return try {
             val metrics = usageDataManager.getDailyMetrics(moodScore = 0)
