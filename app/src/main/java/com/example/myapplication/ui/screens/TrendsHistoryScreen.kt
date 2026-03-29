@@ -51,23 +51,23 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
         }
     }
 
-    // Weekly Focus: Past 7 Days only
+    // Usage Intensity: Past 7 Days only (Higher = More Activity)
     val weeklyHistory = historyData?.history?.takeLast(7) ?: emptyList()
     
-    // Normalized scores (higher = more stable behavior)
-    val scorePoints = if (weeklyHistory.isNotEmpty()) {
-        weeklyHistory.map { 1.0f - it.stress_score }
+    // Usage points (raw stress_score reflects intensity)
+    val usagePoints = if (weeklyHistory.isNotEmpty()) {
+        weeklyHistory.map { it.stress_score }
     } else {
-        listOf(0.6f, 0.5f, 0.7f, 0.6f, 0.4f, 0.8f, 0.75f) // Realistic 7-day default
+        listOf(0.4f, 0.5f, 0.3f, 0.4f, 0.6f, 0.2f, 0.25f) // Realistic 7-day default
     }
 
     // Dynamic Weekly Status Calculation
-    val firstTwoAvg = if (scorePoints.size >= 4) (scorePoints[0] + scorePoints[1]) / 2f else 0.5f
-    val lastTwoAvg = if (scorePoints.size >= 2) (scorePoints[scorePoints.size - 1] + scorePoints[scorePoints.size - 2]) / 2f else 0.6f
+    val firstTwoAvg = if (usagePoints.size >= 4) (usagePoints[0] + usagePoints[1]) / 2f else 0.5f
+    val lastTwoAvg = if (usagePoints.size >= 2) (usagePoints[usagePoints.size - 1] + usagePoints[usagePoints.size - 2]) / 2f else 0.6f
     
     val improvementStatus = when {
-        lastTwoAvg > firstTwoAvg + 0.08f -> "Improving"
-        lastTwoAvg < firstTwoAvg - 0.08f -> "Declining"
+        lastTwoAvg < firstTwoAvg - 0.08f -> "Improving" // Lower usage = Improving
+        lastTwoAvg > firstTwoAvg + 0.08f -> "Declining" // Higher usage = Declining
         else -> "Stable"
     }
 
@@ -105,9 +105,9 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Weekly Trend Chart Card
+        // Digital Usage Trend (Bar Chart)
         AnalyticsCard(
-            title = "Wellness Score Trend",
+            title = "Digital Usage Trend",
             subtitle = "Past 7 Days",
             value = improvementStatus,
             valueColor = when(improvementStatus) {
@@ -117,34 +117,63 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
             }
         ) {
             Column {
-                LineChartCanvas(
-                    points = scorePoints,
-                    lineColor = if (improvementStatus == "Declining") Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
+                BarChartCanvas(
+                    points = usagePoints,
+                    barColor = if (improvementStatus == "Declining") Color(0xFFFF5252) else MaterialTheme.colorScheme.primary
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                // X-Axis Day Labels
+                // X-Axis Day + Date Labels
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    weeklyHistory.forEach { day ->
-                        Text(
-                            text = formatToShortDay(day.date),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 9.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                    }
-                    if (weeklyHistory.isEmpty()) {
-                        listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
-                            Text(
-                                text = day,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 9.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
+                    if (weeklyHistory.isNotEmpty()) {
+                        weeklyHistory.forEach { day ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = formatToShortDay(day.date),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) // Increased visibility
+                                )
+                                Text(
+                                    text = formatToShortDate(day.date),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 7.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) // Increased visibility
+                                )
+                            }
+                        }
+                    } else {
+                        // Demo day + date labels (accurate relative to today)
+                        val calendar = Calendar.getInstance()
+                        // Move calendar back 6 days to start from the beginning of the week view
+                        calendar.add(Calendar.DAY_OF_YEAR, -6)
+                        
+                        val demoFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+                        val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
+
+                        (0..6).forEach { _ ->
+                            val demoDate = demoFormat.format(calendar.time)
+                            val dayName = dayFormat.format(calendar.time)
+                            
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = dayName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f) // Increased visibility
+                                )
+                                Text(
+                                    text = demoDate,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 7.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) // Increased visibility
+                                )
+                            }
+                            calendar.add(Calendar.DAY_OF_YEAR, 1)
                         }
                     }
                 }
@@ -182,7 +211,7 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
 
         // Best Day Card (Numeric-free)
         HighlightCard(
-            title = "Best Day: ${formatToDayName(bestDay?.date ?: "Saturday")}",
+            title = "Best Day: ${formatToDayName(bestDay?.date ?: "Saturday")}${if (bestDay != null) ", " + formatToShortDate(bestDay.date) else ", " + SimpleDateFormat("MMM dd", Locale.getDefault()).format(Date())}",
             subtitle = "Optimal digital balance detected. Your interaction patterns were consistent and relaxed throughout the day.",
             icon = Icons.Rounded.CheckCircle,
             iconColor = Color(0xFF00C853),
@@ -193,7 +222,7 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
 
         // Risk / Focus Day Card (Numeric-free)
         HighlightCard(
-            title = "Focus Day: ${formatToDayName(riskDay?.date ?: "Wednesday")}",
+            title = "Focus Day: ${formatToDayName(riskDay?.date ?: "Wednesday")}${if (riskDay != null) ", " + formatToShortDate(riskDay.date) else ", " + SimpleDateFormat("MMM dd", Locale.getDefault()).format(Date(System.currentTimeMillis() - 86400000L))}",
             subtitle = "Elevated interaction fatigue detected. High app migration and fragmented sessions indicate a need for more rest.",
             icon = Icons.Rounded.Warning,
             iconColor = Color(0xFFFF5252),
@@ -396,5 +425,29 @@ fun formatToShortDay(dateStr: String): String {
         daySdf.format(date ?: Date())
     } catch (e: Exception) {
         if (dateStr.length >= 3) dateStr.take(3) else dateStr
+    }
+}
+@Composable
+fun BarChartCanvas(points: List<Float>, barColor: Color) {
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxWidth().height(130.dp)) {
+        val barCount = points.size
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        
+        val barWidth = (canvasWidth / barCount) * 0.6f
+        val spacing = (canvasWidth / barCount)
+        
+        points.forEachIndexed { i, score ->
+            val barHeight = canvasHeight * score.coerceIn(0.05f, 1.0f)
+            val x = (i * spacing) + (spacing - barWidth) / 2
+            val y = canvasHeight - barHeight
+            
+            drawRoundRect(
+                color = barColor.copy(alpha = if (score > 0.7f) 1.0f else 0.7f),
+                topLeft = androidx.compose.ui.geometry.Offset(x, y),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f)
+            )
+        }
     }
 }

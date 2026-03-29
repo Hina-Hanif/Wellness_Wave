@@ -152,7 +152,7 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) { // Reduced from 20dp
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -163,11 +163,11 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                         imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = "AI",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp) // Reduced from 24dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Current Overall Mental Health State",
+                        text = "Current State", // Simplified title for compactness
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -176,19 +176,19 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                 
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = primaryText,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp)) // Reduced from 24dp
 
             // Determine Overall Level from calibrated engine
             val currentLevel = localReport?.overallLevel ?: "Low"
@@ -210,7 +210,7 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(16.dp)
+                    .height(12.dp) // Reduced from 16dp
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
             ) {
@@ -241,12 +241,13 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                 Text("Overloaded", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp)) // Reduced from 24dp
             
             Text(
                 text = localReport?.overallSummary ?: prediction?.real_time_feedback ?: "Keep up the good habits. Your digital metrics look stable.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 20.sp
             )
         }
     }

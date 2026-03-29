@@ -121,6 +121,34 @@ fun HomeScreen(innerPadding: PaddingValues, onNavigateSettings: () -> Unit = {})
             }
         }
 
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Large Attractive Branding Section
+        Box(
+    modifier = Modifier.fillMaxSize(),
+    contentAlignment = Alignment.Center
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Track the vibe",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Black,
+            color = MaterialTheme.colorScheme.primary,
+            letterSpacing = (-1.5).sp
+        )
+        Text(
+            text = "Fix your focus",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.offset(y = (-12).dp),
+            letterSpacing = (-1.5).sp
+        )
+    }
+}
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // Dynamic Behavioral Scoring System
