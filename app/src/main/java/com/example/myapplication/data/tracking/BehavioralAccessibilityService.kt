@@ -5,6 +5,14 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import java.util.concurrent.atomic.AtomicInteger
 
+import com.example.myapplication.data.local.BehaviorDatabase
+import com.example.myapplication.data.local.BehaviorRecord
+import com.example.myapplication.data.local.BehaviorRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
 class BehavioralAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -258,12 +266,28 @@ class BehavioralAccessibilityService : AccessibilityService() {
         ServiceConnectionManager.setConnected(false)
     }
 
+    // ── Unlock Tracking ─────────────────────────────────
+    private var realUnlockCount = 0
+    private val unlockReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+            if (intent.action == android.content.Intent.ACTION_USER_PRESENT) {
+                realUnlockCount++
+                Log.d(TAG, "Device unlocked. Total unlocks so far today: $realUnlockCount")
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d(TAG, "Behavioral Accessibility Service Connected")
         ServiceConnectionManager.setConnected(true)
 
+        // Register unlock tracker
+        val filter = android.content.IntentFilter(android.content.Intent.ACTION_USER_PRESENT)
+        registerReceiver(unlockReceiver, filter)
+
         checkScreenTimeLimit()
+        startPeriodicRecording() // Added this line to start recording data
 
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             android.widget.Toast.makeText(
@@ -276,6 +300,76 @@ class BehavioralAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         ServiceConnectionManager.setConnected(false)
+        recordingJob?.cancel() // Cancel the background job
+        try {
+            unregisterReceiver(unlockReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unlock receiver unregister failed", e)
+        }
         return super.onUnbind(intent)
+    }
+
+    // ── Database Integration ────────────────────────────────────────────────
+
+    private val dbScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var recordingJob: kotlinx.coroutines.Job? = null
+    
+    private val behaviorRepository by lazy {
+        BehaviorRepository(BehaviorDatabase.getDatabase(this).behaviorDao())
+    }
+
+    private fun startPeriodicRecording() {
+        recordingJob = dbScope.launch {
+            // Wait 5 seconds after service connects before first save
+            kotlinx.coroutines.delay(5000L) 
+            while (true) {
+                saveBehavioralRecordSnapshot()
+                // Save a data snapshot every 1 minute for testing
+                // You can increase this to 15 or 30 minutes later for production
+                kotlinx.coroutines.delay(60 * 1000L) 
+            }
+        }
+    }
+
+    /**
+     * Example function to save behavioral analytics silently.
+     * Ensure this runs in the background.
+     */
+    fun saveBehavioralRecordSnapshot() {
+        val monitor = com.example.myapplication.UsageMonitor(this)
+        val currentScreenTime = try {
+            monitor.getTodayScreenTimeMinutes()
+        } catch (e: Exception) {
+            0L
+        }
+
+        val currentNightUsage = try {
+            monitor.getNightUsageMinutes()
+        } catch (e: Exception) {
+            0L
+        }
+
+        // We use realUnlockCount if it has captured events, otherwise we fall back 
+        // to the estimate used by the UI to keep data consistent.
+        val estimatedUnlocks = (currentScreenTime / 8).toInt().coerceAtLeast(1)
+        val finalUnlocks = if (realUnlockCount > 0) realUnlockCount else estimatedUnlocks
+
+        val record = BehaviorRecord(
+            timestamp = System.currentTimeMillis(),
+            screenTime = currentScreenTime,
+            unlockCount = finalUnlocks, 
+            nightUsage = currentNightUsage, 
+            appSwitchCount = appSwitchTracker.switchCount,
+            scrollSpeed = scrollVelocityAvg.value
+        )
+
+        dbScope.launch {
+            try {
+                behaviorRepository.insertRecord(record)
+                Log.d(TAG, "Behavioral record saved silently!")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving behavioral record", e)
+            }
+        }
     }
 }
