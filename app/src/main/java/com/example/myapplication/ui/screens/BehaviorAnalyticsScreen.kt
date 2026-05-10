@@ -60,6 +60,7 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
     var currentTime by remember { mutableStateOf("--:-- AM") }
     var screenTimeText by remember { mutableStateOf("--") }
     var nightUsageText by remember { mutableStateOf("--") }
+    var unlockCount by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         while(true) {
@@ -84,9 +85,11 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
             try {
                 val total = monitor.getTodayScreenTimeMinutes()
                 val night = monitor.getNightUsageMinutes()
+                val unlocks = monitor.getTodayUnlockCount()
                 val intervals = monitor.getTodayUsageIntervals(12) 
                 
                 screenTimeMinutes = total
+                unlockCount = unlocks
                 screenTimeText = if (total >= 60) "${total/60}h ${total%60}m" else "${total}m"
                 nightUsageText = if (night >= 60) "${night/60}h ${night%60}m" else "${night}m"
                 liveScreenTimePoints = intervals
@@ -220,11 +223,11 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
         Spacer(modifier = Modifier.height(24.dp))
 
         // ── Night Usage + Unlocks ─────────────────────────────────
-        SectionLabel(text = "NATIVE USAGE (11 PM – 5 AM)")
+        SectionLabel(text = "NATIVE USAGE (12 AM – 6 AM)")
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        NativeUsageRow(screenTimeMinutes = screenTimeMinutes)
+        NativeUsageRow(unlockCount = unlockCount, nightUsageText = nightUsageText)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -419,15 +422,12 @@ fun LineChartCanvas(points: List<Float>, lineColor: Color) {
 
 // ── Night Usage Row ────────────────────────────────────────────────────────────
 @Composable
-fun NativeUsageRow(screenTimeMinutes: Long) {
-    val unlockEstimate = (screenTimeMinutes / 8).coerceAtLeast(1)
-    val nightEstimateMin = (screenTimeMinutes * 0.12f).toInt()
-
+fun NativeUsageRow(unlockCount: Int, nightUsageText: String) {
     Row(modifier = Modifier.fillMaxWidth()) {
         NativeStatCard(
             modifier = Modifier.weight(1f),
             title = "Unlocks",
-            value = "$unlockEstimate",
+            value = "$unlockCount",
             sub = "Today",
             icon = Icons.Rounded.LockOpen,
             color = MaterialTheme.colorScheme.primary
@@ -436,8 +436,8 @@ fun NativeUsageRow(screenTimeMinutes: Long) {
         NativeStatCard(
             modifier = Modifier.weight(1f),
             title = "Night Usage",
-            value = "${nightEstimateMin}m",
-            sub = "11 PM – 5 AM",
+            value = nightUsageText,
+            sub = "12 AM – 6 AM",
             icon = Icons.Rounded.Nightlight,
             color = Color(0xFF7986CB)
         )

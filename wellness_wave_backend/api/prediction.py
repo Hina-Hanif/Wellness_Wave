@@ -1,122 +1,134 @@
 import os
 import joblib
 import pandas as pd
-from fastapi import APIRouter, HTTPException
-from database import get_latest_metrics
+from fastapi import APIRouter, HTTPException, Query
+from datetime import datetime
 
 router = APIRouter()
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "stress_model.pkl")
 
-MODEL_PATH = os.path.join(BASE_DIR, "behavioral_model.pkl")
-FEATURES_PATH = os.path.join(BASE_DIR, "model_features.pkl")
-
-# Load V3 Ensemble Pipeline
-print(f"Starting V3 Intelligence load pipeline...")
+# Load new model
+print(f"Loading Intelligence Engine from: {MODEL_PATH}")
 try:
-    print(f"Loading V3 Ensemble from: {MODEL_PATH}")
-    model_pipeline = joblib.load(MODEL_PATH)
-    print(f"Loading V3 features from: {FEATURES_PATH}")
-    features_list = joblib.load(FEATURES_PATH)
-    print("V3 Intelligence Engine loaded successfully.")
-
+    if os.path.exists(MODEL_PATH):
+        model = joblib.load(MODEL_PATH)
+        print("Intelligence Engine loaded successfully.")
+    else:
+        model = None
+        print(f"MODEL NOT FOUND: {MODEL_PATH}")
 except Exception as e:
     print(f"MODEL LOAD ERROR: {type(e).__name__} - {e}")
-    model_pipeline = None
-    features_list = None
+    model = None
+
+# Notification State Tracking
+user_states = {}
+
+def check_and_send_notification(user_id, state):
+    global user_states
+    now = datetime.now()
+    
+    if user_id not in user_states:
+        user_states[user_id] = {"state": state, "start_time": now, "last_notified": None}
+        return
+        
+    current_record = user_states[user_id]
+    
+    if current_record["state"] != state:
+        # State changed, reset timer
+        user_states[user_id] = {"state": state, "start_time": now, "last_notified": None}
+        return
+        
+    # Same state continues
+    duration_hours = (now - current_record["start_time"]).total_seconds() / 3600.0
+    
+    # Check if we should notify
+    should_notify = False
+    if state in ["Stress", "Addiction"] and duration_hours >= 1.0:
+        should_notify = True
+    elif state == "Burnout" and duration_hours >= 5.0:
+        should_notify = True
+        
+    if should_notify:
+        # Avoid repeated spam (notify at most once every 1 hour for the same ongoing state)
+        last_notified = current_record["last_notified"]
+        if last_notified is None or (now - last_notified).total_seconds() / 3600.0 >= 1.0:
+            print(f"NOTIFICATION TRIGGERED: User {user_id} has been in state {state} for {duration_hours:.1f} hours.")
+            current_record["last_notified"] = now
 
 @router.get("/prediction")
-async def get_prediction(user_id: str):
-    latest_data = get_latest_metrics(user_id)
-
+async def get_prediction(user_id: str, test: bool = Query(False)):
     response = {
         "user_id": user_id,
-        "date_evaluated": None,
-        "stress_level": "Initial State",
-        "confidence_score": 0.0,
-        "anxiety_detected": False,
-        "burnout_detected": False,
-        "addiction_detected": False,
-        "real_time_feedback": "Please enable Accessibility Service and tap 'Sync' to start AI Analysis."
+        "date_evaluated": datetime.now().isoformat(),
+        "stress_level": "Unknown",
+        "real_time_feedback": "Analyzing your behavior..."
     }
 
-    if not latest_data:
-        return response
-
-    response["date_evaluated"] = latest_data.get("date")
-
-    if model_pipeline is None or features_list is None:
+    if model is None:
         response["stress_level"] = "AI Engine Offline"
-        response["real_time_feedback"] = "V3 Engine is initializing. Please check back in a moment."
+        response["real_time_feedback"] = "Engine is initializing."
         return response
 
     try:
-        # ── V3 FEATURE ENGINEERING ────────────────────────────────────────────
-        st = float(latest_data.get("screen_time", 0.0)) / 60.0 # Convert to hours for model
-        uc = float(latest_data.get("unlock_count", 0.0))
-        nu = float(latest_data.get("night_usage", 0.0)) / 60.0 # hours
-        sc = float(latest_data.get("session_count", 0.0))
-        asc = float(latest_data.get("app_switch_count", 0.0))
+        # 1. Fetch latest user data from CSV
+        data_path = os.path.join(BASE_DIR, "data", "user_behavior.csv")
         
-        # Mapping base features
-        metrics_map = {
-            "screen_time":            st,
-            "unlock_count":           uc,
-            "social_time":            float(latest_data.get("social_time", 0.0)) / 60.0,
-            "productivity_time":      float(latest_data.get("productivity_time", 0.0)) / 60.0,
-            "night_usage":            nu,
-            "session_count":          sc,
-            "scrolling_speed_avg":    float(latest_data.get("scrolling_speed_avg", 0.0)),
-            "usage_consistency_shift": float(latest_data.get("usage_consistency_shift", 0.0)),
-            "typing_cps":             float(latest_data.get("typing_cps", 0.0)),
-            "typing_pauses":          float(latest_data.get("typing_pauses_count", 0.0)),
-            "scroll_erraticness":     float(latest_data.get("scroll_erraticness", 0.0)),
-            "app_switch_count":       asc,
-            "reaction_delay_sec":     float(latest_data.get("notification_response_sec", 60.0)),
-            "mood_score":             float(latest_data.get("mood_score", 7.0)),
-            # Engineered
-            "social_ratio":           (float(latest_data.get("social_time", 0.0)) / 60.0) / (st + 1e-6),
-            "night_ratio":            nu / (st + 1e-6),
-            "productivity_ratio":     (float(latest_data.get("productivity_time", 0.0)) / 60.0) / (st + 1e-6),
-            "switch_per_hour":        asc / (st + 1e-6),
-            "pause_per_keystroke":    float(latest_data.get("typing_pauses_count", 0.0)) / (sc + 1e-6)
-        }
-
-        # Build feature vector for V3 pipeline
-        ordered_input = [metrics_map.get(feat, 0.0) for feat in features_list]
-        df = pd.DataFrame([ordered_input], columns=features_list)
-
-        # Inference using full pipeline (Scaler + Ensemble)
-        cat_prediction = model_pipeline.predict(df)[0]
+        features_list = ['screen_time', 'app_switches', 'scroll_speed', 'typing_speed', 'unlock_count', 'night_usage']
+        input_features = [0, 0, 0, 0, 0, 0] # default empty
         
-        # Confidence logic for V3
-        if hasattr(model_pipeline["model"], "predict_proba"):
-            X_scaled = model_pipeline["scaler"].transform(df)
-            probs = model_pipeline["model"].predict_proba(X_scaled)[0]
-            confidence = float(max(probs))
-        else:
-            confidence = 0.94
-
+        if os.path.exists(data_path):
+            df = pd.read_csv(data_path)
+            user_df = df[df['user_id'] == user_id]
+            if not user_df.empty:
+                latest_row = user_df.iloc[-1]
+                input_features = [
+                    float(latest_row.get('screen_time', 0)),
+                    float(latest_row.get('app_switches', 0)),
+                    float(latest_row.get('scroll_speed', 0)),
+                    float(latest_row.get('typing_speed', 0)),
+                    float(latest_row.get('unlock_count', 0)),
+                    float(latest_row.get('night_usage', 0))
+                ]
+        
+        # 2. Test override mode
+        if test:
+            # Override with extreme values as requested
+            input_features = [500, 120, 900, 10, 150, 200]
+            
+        print("FEATURES:", input_features)
+        print("INPUT:", input_features)
+        
+        # Build feature vector dynamically
+        df_input = pd.DataFrame([input_features], columns=features_list)
+        
+        # 3. Model Prediction
+        prediction = model.predict(df_input)[0]
+        print("PREDICTION:", prediction)
+        
+        # 4. Check and Send Notifications
+        check_and_send_notification(user_id, prediction)
+        
         # Feedback mapping
         feedback_map = {
             "Balanced": "Your patterns look balanced. Keep up the good habits!",
             "Stress": "Stress signals detected in rapid scrolling/app switching. Take a deep breath.",
-            "Anxiety": "Anxiety markers found (erratic scrolling). Try a 2-minute focus session.",
             "Burnout": "High usage + low responsiveness suggests burnout. Consider a digital sunset.",
             "Addiction": "Intense usage patterns detected. Screen time is extremely high."
         }
-
-        return {
-            "user_id": user_id,
-            "date_evaluated": response["date_evaluated"],
-            "stress_level": str(cat_prediction),
-            "confidence_score": confidence,
-            "anxiety_detected": bool(cat_prediction == "Anxiety"),
-            "burnout_detected": bool(cat_prediction == "Burnout"),
-            "addiction_detected": bool(cat_prediction == "Addiction"),
-            "real_time_feedback": feedback_map.get(cat_prediction, "Keep monitoring your behavior!")
-        }
+        
+        response["stress_level"] = str(prediction)
+        response["real_time_feedback"] = feedback_map.get(str(prediction), "Keep monitoring your behavior!")
+        
+        # Extra fields to prevent breaking the UI
+        response["confidence_score"] = 0.95
+        response["anxiety_detected"] = False
+        response["burnout_detected"] = bool(prediction == "Burnout")
+        response["addiction_detected"] = bool(prediction == "Addiction")
+        
+        return response
 
     except Exception as e:
         print("PREDICTION ERROR:", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

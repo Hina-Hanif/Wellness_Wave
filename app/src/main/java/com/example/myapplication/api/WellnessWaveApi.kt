@@ -13,6 +13,9 @@ interface WellnessWaveApi {
     @POST("/daily-data")
     suspend fun submitDailyData(@Body metrics: UsageMetrics): Response<Map<String, Any>>
 
+    @POST("/collect-data")
+    suspend fun collectData(@Body data: com.example.myapplication.models.RealTimeData): Response<Map<String, Any>>
+
     @GET("/prediction")
     suspend fun getPrediction(@Query("user_id") userId: String): Response<PredictionResponse>
 

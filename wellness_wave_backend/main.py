@@ -63,6 +63,44 @@ async def submit_daily_data(metrics: UsageMetrics):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class RealTimeData(BaseModel):
+    user_id: str
+    screen_time: int
+    app_switches: int
+    scroll_speed: float
+    typing_speed: float
+    unlock_count: int
+    night_usage: int
+
+@app.post("/collect-data")
+async def collect_data(data: RealTimeData):
+    try:
+        import csv
+        file_path = os.path.join(os.path.dirname(__file__), "data", "user_behavior.csv")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        file_exists = os.path.isfile(file_path)
+        with open(file_path, mode="a", newline="") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["user_id", "timestamp", "screen_time", "app_switches", "scroll_speed", "typing_speed", "unlock_count", "night_usage"])
+            
+            writer.writerow([
+                data.user_id,
+                datetime.now().isoformat(),
+                data.screen_time,
+                data.app_switches,
+                data.scroll_speed,
+                data.typing_speed,
+                data.unlock_count,
+                data.night_usage
+            ])
+            
+        return {"status": "success", "message": "Real-time data stored successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.get("/history")
 async def get_history(user_id: str):

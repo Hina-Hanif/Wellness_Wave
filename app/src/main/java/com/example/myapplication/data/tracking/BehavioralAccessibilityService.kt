@@ -266,25 +266,10 @@ class BehavioralAccessibilityService : AccessibilityService() {
         ServiceConnectionManager.setConnected(false)
     }
 
-    // ── Unlock Tracking ─────────────────────────────────
-    private var realUnlockCount = 0
-    private val unlockReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
-            if (intent.action == android.content.Intent.ACTION_USER_PRESENT) {
-                realUnlockCount++
-                Log.d(TAG, "Device unlocked. Total unlocks so far today: $realUnlockCount")
-            }
-        }
-    }
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d(TAG, "Behavioral Accessibility Service Connected")
         ServiceConnectionManager.setConnected(true)
-
-        // Register unlock tracker
-        val filter = android.content.IntentFilter(android.content.Intent.ACTION_USER_PRESENT)
-        registerReceiver(unlockReceiver, filter)
 
         checkScreenTimeLimit()
         startPeriodicRecording() // Added this line to start recording data
@@ -301,11 +286,6 @@ class BehavioralAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         ServiceConnectionManager.setConnected(false)
         recordingJob?.cancel() // Cancel the background job
-        try {
-            unregisterReceiver(unlockReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Unlock receiver unregister failed", e)
-        }
         return super.onUnbind(intent)
     }
 
@@ -349,10 +329,11 @@ class BehavioralAccessibilityService : AccessibilityService() {
             0L
         }
 
-        // We use realUnlockCount if it has captured events, otherwise we fall back 
-        // to the estimate used by the UI to keep data consistent.
-        val estimatedUnlocks = (currentScreenTime / 8).toInt().coerceAtLeast(1)
-        val finalUnlocks = if (realUnlockCount > 0) realUnlockCount else estimatedUnlocks
+        val finalUnlocks = try {
+            monitor.getTodayUnlockCount()
+        } catch (e: Exception) {
+            1
+        }
 
         val record = BehaviorRecord(
             timestamp = System.currentTimeMillis(),
@@ -369,6 +350,31 @@ class BehavioralAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Behavioral record saved silently!")
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving behavioral record", e)
+            }
+            
+            // Send to Backend API
+            try {
+                val sharedPrefs = getSharedPreferences("wellness_wave_prefs", android.content.Context.MODE_PRIVATE)
+                val userId = sharedPrefs.getString("user_id", "default_user") ?: "default_user"
+                
+                val realTimeData = com.example.myapplication.models.RealTimeData(
+                    user_id = userId,
+                    screen_time = currentScreenTime,
+                    app_switches = appSwitchTracker.switchCount,
+                    scroll_speed = scrollVelocityAvg.value,
+                    typing_speed = typingCps.value,
+                    unlock_count = finalUnlocks,
+                    night_usage = currentNightUsage
+                )
+                
+                val response = com.example.myapplication.api.RetrofitClient.instance.collectData(realTimeData)
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Successfully sent data to backend")
+                } else {
+                    Log.e(TAG, "Failed to send data to backend: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending data to backend", e)
             }
         }
     }

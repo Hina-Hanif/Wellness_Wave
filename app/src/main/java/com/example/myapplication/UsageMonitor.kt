@@ -41,20 +41,43 @@ class UsageMonitor(private val context: Context) {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val calendar = java.util.Calendar.getInstance()
         
-        // 11 PM Yesterday
-        calendar.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        // 12:00 AM Today
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
         calendar.set(java.util.Calendar.MINUTE, 0)
         calendar.set(java.util.Calendar.SECOND, 0)
         calendar.set(java.util.Calendar.MILLISECOND, 0)
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, -1)
         val startTime = calendar.timeInMillis
         
-        // 5 AM Today
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, 1)
-        calendar.set(java.util.Calendar.HOUR_OF_DAY, 5)
+        // 6:00 AM Today
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 6)
         val endTime = calendar.timeInMillis
 
         return getPreciseUsageMinutes(usageStatsManager, startTime, endTime)
+    }
+
+    fun getTodayUnlockCount(): Int {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startTime = calendar.timeInMillis
+        
+        val events = usageStatsManager.queryEvents(startTime, endTime)
+        val event = android.app.usage.UsageEvents.Event()
+        var unlockCount = 0
+        
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            // 18 is UsageEvents.Event.KEYGUARD_HIDDEN
+            if (event.eventType == 18) {
+                unlockCount++
+            }
+        }
+        return unlockCount
     }
 
     private fun getPreciseUsageMinutes(usageStatsManager: UsageStatsManager, startTime: Long, endTime: Long): Long {

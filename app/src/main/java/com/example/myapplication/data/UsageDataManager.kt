@@ -29,18 +29,12 @@ class UsageDataManager(private val context: Context) {
         val events = usageStatsManager.queryEvents(startTime, endTime)
         val event = UsageEvents.Event()
         
-        var nightUsageMs = 0L
         var totalAppSwitches = 0
         val lastEventTime = mutableMapOf<String, Long>()
-        
-        val nightStartHour = 23
-        val nightEndHour = 5
         
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val eventTime = event.timeStamp
-            val hour = Calendar.getInstance().apply { timeInMillis = eventTime }.get(Calendar.HOUR_OF_DAY)
-            val isNight = hour >= nightStartHour || hour < nightEndHour
             
             when (event.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
@@ -48,14 +42,14 @@ class UsageDataManager(private val context: Context) {
                     lastEventTime[event.packageName] = eventTime
                 }
                 UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    val start = lastEventTime.remove(event.packageName)
-                    if (start != null) {
-                        val duration = eventTime - start
-                        if (isNight) nightUsageMs += duration
-                    }
+                    lastEventTime.remove(event.packageName)
                 }
             }
         }
+        
+        val usageMonitor = com.example.myapplication.UsageMonitor(context)
+        val nightUsageMinutes = usageMonitor.getNightUsageMinutes()
+        val realUnlockCount = usageMonitor.getTodayUnlockCount()
 
         // Aggregate stats for category totals
         val stats = usageStatsManager.queryAndAggregateUsageStats(startTime, endTime)
@@ -75,7 +69,7 @@ class UsageDataManager(private val context: Context) {
             }
         }
 
-        val nightRatio = if (totalScreenTimeMs > 0) nightUsageMs.toFloat() / totalScreenTimeMs else 0f
+        val nightRatio = if (totalScreenTimeMs > 0) (nightUsageMinutes * 60 * 1000).toFloat() / totalScreenTimeMs else 0f
 
         val sharedPrefs = context.getSharedPreferences("wellness_wave_prefs", Context.MODE_PRIVATE)
         var userId = sharedPrefs.getString("user_id", null) ?: UUID.randomUUID().toString().also {
@@ -96,10 +90,10 @@ class UsageDataManager(private val context: Context) {
             user_id = userId,
             date = dateString,
             screen_time = TimeUnit.MILLISECONDS.toMinutes(totalScreenTimeMs),
-            unlock_count = (totalAppSwitches / 5).coerceAtLeast(1), 
+            unlock_count = realUnlockCount, 
             social_time = TimeUnit.MILLISECONDS.toMinutes(socialTimeMs),
             productivity_time = TimeUnit.MILLISECONDS.toMinutes(productivityTimeMs),
-            night_usage = TimeUnit.MILLISECONDS.toMinutes(nightUsageMs),
+            night_usage = nightUsageMinutes,
             night_ratio = nightRatio,
             session_count = totalAppSwitches,
             scrolling_speed_avg = BehavioralAccessibilityService.scrollVelocityAvg.value,
