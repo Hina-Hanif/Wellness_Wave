@@ -304,9 +304,8 @@ class BehavioralAccessibilityService : AccessibilityService() {
             kotlinx.coroutines.delay(5000L) 
             while (true) {
                 saveBehavioralRecordSnapshot()
-                // Save a data snapshot every 1 minute for testing
-                // You can increase this to 15 or 30 minutes later for production
-                kotlinx.coroutines.delay(60 * 1000L) 
+                // Save a data snapshot every 15 minutes for production battery optimization
+                kotlinx.coroutines.delay(15 * 60 * 1000L) 
             }
         }
     }

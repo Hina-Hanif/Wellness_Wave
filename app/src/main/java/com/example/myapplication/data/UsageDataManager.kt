@@ -17,9 +17,8 @@ class UsageDataManager(private val context: Context) {
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
         
-        // Start from 11 PM yesterday to capture full night window
-        calendar.add(Calendar.DAY_OF_YEAR, -1)
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
+        // Start from 12:00 AM today to standardize night usage window and align with backend/UI logic
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)

@@ -6,7 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 
-class UsageMonitor(private val context: Context) {
+class  UsageMonitor(private val context: Context) {
 
     fun hasUsagePermission(): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager

@@ -265,7 +265,7 @@ def main():
     importances = pd.Series(model.feature_importances_, index=FEATURES)
     importances = importances.sort_values(ascending=False)
     for feat, imp in importances.items():
-        bar = "█" * int(imp * 60)
+        bar = "#" * int(imp * 60)
         print(f"  {feat:<22} {imp:.4f}  {bar}")
     print()
 
@@ -316,7 +316,7 @@ def main():
         # also show rule-based label for comparison
         rule_label = assign_label(row)
 
-        print(f"\n  👤 {name}")
+        print(f"\n  [USER] {name}")
         print(f"     Model → {pred_label:<12} ({conf:.1f}% confidence)")
         print(f"     Rules → {rule_label}")
 
