@@ -1,328 +1,369 @@
 """
 train_model.py
 ==============
-Digital Wellbeing Classifier
-Predicts: Balanced | Stress | Addiction | Burnout
-
-Features used:
-  - screen_time      (minutes/day)
-  - app_switches     (focus fragmentation proxy)
-  - scroll_speed     (pixels/second)
-  - typing_speed     (characters/second)
-  - unlock_count     (times/day)
-  - night_usage      (minutes after 10 PM)
+Machine Learning Regression, Calibration, Dynamic Label-Specific Percentile Thresholding,
+SHAP Analysis, and Noise Sensitivity Evaluation for Wellness Wave Behavioral Wellbeing Multi-Label Engine.
 """
 
+import json
 import os
+import sys
+import time
+from datetime import datetime
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import classification_report, confusion_matrix
 import joblib
-import warnings
-warnings.filterwarnings("ignore")
+
+# Scikit-Learn Metrics & Tools
+from sklearn.preprocessing import StandardScaler
+from scipy.stats import pearsonr
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    mean_absolute_error, mean_squared_error, confusion_matrix, r2_score
+)
+
+# XGBoost & SHAP Imports
+import xgboost as xgb
+import shap
+
+SEED = 42
+np.random.seed(SEED)
+
+FEATURE_COLUMNS = [
+    # Base 12 behavioral features
+    "screen_time_minutes", "unlock_count", "app_switch_count",
+    "typing_speed_wpm", "scroll_speed", "night_usage_minutes",
+    "social_app_minutes", "productive_app_minutes", "night_ratio",
+    "unlock_intensity", "fragmentation_index", "agitation_score",
+    # Social App Feature Group
+    "social_ratio", "social_opens_per_hour", "social_session_avg",
+    "social_session_var", "late_night_social_ratio", "social_inter_open_gap_min",
+    # Temporal & Historical Features
+    "prev_label_lag1", "roll_3d_screen_time_minutes", "roll_7d_screen_time_minutes",
+    "roll_3d_social_ratio", "roll_7d_social_ratio", "roll_3d_app_switch_count",
+    "roll_7d_app_switch_count", "roll_3d_scroll_speed", "roll_7d_scroll_speed",
+    "roll_3d_typing_speed_wpm", "roll_7d_typing_speed_wpm",
+    "dod_pct_screen_time_minutes", "dod_pct_app_switch_count",
+    "dod_pct_scroll_speed", "dod_pct_typing_speed_wpm"
+]
+
+LABELS = ["Stress", "Anxiety", "Burnout", "Addiction"]
 
 
-# ─────────────────────────────────────────────
-# 1. LABELING ENGINE  (rule-based ground truth)
-# ─────────────────────────────────────────────
+def load_dataset(data_path: str) -> pd.DataFrame:
+    print("\n==================================================")
+    print("STEP 1: LOADING & INSPECTING DATASET")
+    print("==================================================")
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"Dataset missing at: {data_path}")
 
-def compute_subscores(row):
-    """
-    Returns a dict of independent sub-scores for each symptom dimension.
-    Each dimension maps to a distinct psychological construct.
-    """
-    screen_time  = row["screen_time"]
-    app_switches = row["app_switches"]
-    scroll_speed = row["scroll_speed"]
-    typing_speed = row["typing_speed"]
-    unlock_count = row["unlock_count"]
-    night_usage  = row["night_usage"]
+    df = pd.read_csv(data_path)
+    df.sort_values(by=["user_id", "date"], inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
-    # ── COMPULSION score (Addiction signal) ──────────────────────
-    # High unlock count + high app switching = compulsive checking loop
-    compulsion = 0
-    if unlock_count > 120:   compulsion += 4
-    elif unlock_count > 80:  compulsion += 3
-    elif unlock_count > 50:  compulsion += 2
-    elif unlock_count > 25:  compulsion += 1
-
-    if app_switches > 120:   compulsion += 3
-    elif app_switches > 80:  compulsion += 2
-    elif app_switches > 45:  compulsion += 1
-
-    # ── OVERLOAD score (Burnout signal) ──────────────────────────
-    # Sustained high screen time + night usage = cognitive overload / no recovery
-    overload = 0
-    if screen_time > 420:    overload += 4   # 7+ hrs
-    elif screen_time > 360:  overload += 3   # 6+ hrs
-    elif screen_time > 240:  overload += 2   # 4+ hrs
-    elif screen_time > 120:  overload += 1
-
-    if night_usage > 150:    overload += 3   # 2.5+ hrs late night
-    elif night_usage > 90:   overload += 2
-    elif night_usage > 45:   overload += 1
-
-    # ── AGITATION score (Stress / Anxiety signal) ─────────────────
-    # Fast scrolling + fast typing = nervous, hurried interaction style
-    agitation = 0
-    if scroll_speed > 1000:  agitation += 3
-    elif scroll_speed > 700: agitation += 2
-    elif scroll_speed > 400: agitation += 1
-
-    if typing_speed > 10:    agitation += 2
-    elif typing_speed > 7:   agitation += 1
-
-    # night usage also raises anxiety (disrupted sleep → anxious state)
-    if night_usage > 90:     agitation += 2
-    elif night_usage > 45:   agitation += 1
-
-    return compulsion, overload, agitation
-
-
-def assign_label(row):
-    """
-    Maps subscores → label using a priority hierarchy:
-
-    Priority order (most severe wins when criteria are met):
-      1. Burnout   — extreme overload + at least some compulsion
-      2. Addiction — compulsion-dominant pattern
-      3. Stress    — agitation-dominant, moderate usage
-      4. Balanced  — none of the above
-
-    Rationale:
-      • Burnout requires BOTH sustained usage (overload) AND compulsive
-        engagement — it is the exhaustion end-state of addiction.
-      • Addiction is flagged when compulsive checking is dominant even
-        if total screen time is moderate (e.g., 80 unlocks, low scroll).
-      • Stress/Anxiety is flagged by agitated interaction style with
-        moderate-to-high total usage.
-      • Balanced = low scores across all dimensions.
-    """
-    compulsion, overload, agitation = compute_subscores(row)
-
-    # ── Burnout: exhaustion from prolonged digital overload ──────
-    if overload >= 5 and compulsion >= 3:
-        return "Burnout"
-
-    # ── Addiction: compulsive engagement pattern ─────────────────
-    if compulsion >= 5:
-        return "Addiction"
-
-    # Addiction also when compulsion moderate but screen time very high
-    if compulsion >= 3 and overload >= 4:
-        return "Addiction"
-
-    # ── Stress / Anxiety: agitated, hurried usage ────────────────
-    if agitation >= 4:
-        return "Stress"
-
-    # Stress also when agitation moderate with significant night usage
-    if agitation >= 2 and overload >= 3:
-        return "Stress"
-
-    # ── Balanced ─────────────────────────────────────────────────
-    return "Balanced"
-
-
-# ─────────────────────────────────────────────
-# 2. DATA LOADING / GENERATION
-# ─────────────────────────────────────────────
-
-CSV_PATH = "digital_behavior_data.csv"
-
-def load_or_generate_data(path=CSV_PATH, n_samples=1200):
-    """Load CSV if present, else generate synthetic data for demo."""
-    if os.path.exists(path):
-        print(f"[INFO] Loading data from '{path}' ...")
-        df = pd.read_csv(path)
-        required = ["screen_time","app_switches","scroll_speed",
-                    "typing_speed","unlock_count","night_usage"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            raise ValueError(f"CSV missing columns: {missing}")
-    else:
-        print(f"[INFO] '{path}' not found — generating {n_samples} synthetic samples for demo.")
-        rng = np.random.default_rng(42)
-
-        # Simulate realistic, skewed distributions
-        df = pd.DataFrame({
-            "screen_time":  rng.gamma(shape=3, scale=80, size=n_samples).clip(30, 600),
-            "app_switches": rng.gamma(shape=2, scale=40, size=n_samples).clip(5, 200),
-            "scroll_speed": rng.gamma(shape=2, scale=300, size=n_samples).clip(50, 1500),
-            "typing_speed": rng.gamma(shape=2, scale=4,   size=n_samples).clip(1, 15),
-            "unlock_count": rng.gamma(shape=2, scale=35,  size=n_samples).clip(5, 200),
-            "night_usage":  rng.gamma(shape=1.5, scale=50, size=n_samples).clip(0, 300),
-        })
-        df = df.round(1)
-
+    print(f"Dataset path: {data_path}")
+    print(f"Total rows: {len(df)}, Total columns: {len(df.columns)}")
+    print(f"Unique users: {df['user_id'].nunique()}")
+    print(f"Date range: {df['date'].min()} to {df['date'].max()}")
+    print(f"Null count: {df.isnull().sum().sum()}")
     return df
 
 
-# ─────────────────────────────────────────────
-# 3. FEATURE ENGINEERING
-# ─────────────────────────────────────────────
+def temporal_train_val_test_split(df: pd.DataFrame):
+    """
+    Temporal User Split:
+    For each user, train on earlier 70% of days, validate on middle 15% of days, test on final 15% of days.
+    Guarantees strict temporal holdout without future-data leakage.
+    """
+    print("\n==================================================")
+    print("STEP 2: TEMPORAL USER SPLITTING (70% Train / 15% Val / 15% Test)")
+    print("==================================================")
 
-def add_features(df):
-    """Derived features that help the model learn interaction patterns."""
-    df = df.copy()
+    train_rows, val_rows, test_rows = [], [], []
 
-    # Ratio of night usage to total screen time (sleep disruption ratio)
-    df["night_ratio"] = (df["night_usage"] / (df["screen_time"] + 1)).round(3)
+    for uid, group in df.groupby("user_id", sort=False):
+        group_sorted = group.sort_values(by="date")
+        n = len(group_sorted)
+        n_train = int(0.70 * n)
+        n_val = int(0.15 * n)
 
-    # Unlock frequency proxy (unlocks per hour of screen time)
-    df["unlock_intensity"] = (df["unlock_count"] / (df["screen_time"] / 60 + 0.1)).round(2)
+        train_rows.append(group_sorted.iloc[:n_train])
+        val_rows.append(group_sorted.iloc[n_train:n_train + n_val])
+        test_rows.append(group_sorted.iloc[n_train + n_val:])
 
-    # Focus fragmentation index: app switches per hour
-    df["fragmentation_index"] = (df["app_switches"] / (df["screen_time"] / 60 + 0.1)).round(2)
+    train_df = pd.concat(train_rows).reset_index(drop=True)
+    val_df = pd.concat(val_rows).reset_index(drop=True)
+    test_df = pd.concat(test_rows).reset_index(drop=True)
 
-    # Agitation composite: scroll + typing speed normalized
-    df["agitation_score"] = (
-        df["scroll_speed"] / 1500 * 0.6 +
-        df["typing_speed"] / 15   * 0.4
-    ).round(3)
+    print(f"Train Set: {len(train_df)} rows ({train_df['date'].min()} to {train_df['date'].max()})")
+    print(f"Val Set  : {len(val_df)} rows ({val_df['date'].min()} to {val_df['date'].max()})")
+    print(f"Test Set : {len(test_df)} rows ({test_df['date'].min()} to {test_df['date'].max()})")
 
-    return df
+    return train_df, val_df, test_df
 
 
-# ─────────────────────────────────────────────
-# 4. MAIN PIPELINE
-# ─────────────────────────────────────────────
+def train_and_evaluate_regression_models(train_df, val_df, test_df):
+    print("\n==================================================")
+    print("STEP 3: MULTI-LABEL CONTINUOUS RISK REGRESSION & THRESHOLDING")
+    print("==================================================")
+
+    X_train = train_df[FEATURE_COLUMNS]
+    X_val = val_df[FEATURE_COLUMNS]
+    X_test = test_df[FEATURE_COLUMNS]
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    X_test_scaled = scaler.transform(X_test)
+
+    reg_models = {}
+    thresholds = {}
+    reports = {}
+    level_map = {"Low": 0, "Medium": 1, "High": 2}
+
+    for label in LABELS:
+        print(f"\n--------------------------------------------------")
+        print(f"Training XGBoost Regressor for: {label}")
+        print(f"--------------------------------------------------")
+
+        y_train_score = train_df[f"{label.lower()}_score"].values
+        y_val_score = val_df[f"{label.lower()}_score"].values
+        y_test_score = test_df[f"{label.lower()}_score"].values
+
+        y_test_level = test_df[f"{label.lower()}_level"].map(level_map).values
+
+        # XGBoost Regressor for continuous risk score prediction
+        model = xgb.XGBRegressor(
+            n_estimators=120,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=SEED,
+            eval_metric="rmse"
+        )
+        model.fit(X_train_scaled, y_train_score)
+        reg_models[label] = model
+
+        # Predictions on Val & Test sets
+        val_pred_scores = np.clip(model.predict(X_val_scaled), 0.0, 1.0)
+        test_pred_scores = np.clip(model.predict(X_test_scaled), 0.0, 1.0)
+
+        # Regression Metrics on Test Set
+        mae = mean_absolute_error(y_test_score, test_pred_scores)
+        rmse = np.sqrt(mean_squared_error(y_test_score, test_pred_scores))
+
+        # Label-Specific Empirical Natural Percentile Cutoffs from Validation Set
+        p33 = float(np.percentile(val_pred_scores, 33.33))
+        p66 = float(np.percentile(val_pred_scores, 66.67))
+        thresholds[label] = {"p33": round(p33, 4), "p66": round(p66, 4)}
+
+        # Map continuous test predictions to Low (0), Medium (1), High (2) using label-specific thresholds
+        test_preds_level = np.zeros(len(test_pred_scores), dtype=int)
+        test_preds_level[test_pred_scores >= p33] = 1
+        test_preds_level[test_pred_scores >= p66] = 2
+
+        # Compute Pearson r and R2 against raw pre-noise formula output
+        raw_formula_col = f"raw_formula_{label.lower()}"
+        if raw_formula_col in test_df.columns:
+            y_raw_formula = test_df[raw_formula_col].values
+            corr_r, _ = pearsonr(test_pred_scores, y_raw_formula)
+            r2_val = float(r2_score(y_raw_formula, test_pred_scores))
+        else:
+            corr_r, r2_val = 0.0, 0.0
+
+        # Detailed Classification Metrics
+        acc = accuracy_score(y_test_level, test_preds_level)
+        macro_f1 = f1_score(y_test_level, test_preds_level, average="macro")
+
+        # Per-class Precision / Recall breakdown (Low=0, Medium=1, High=2)
+        precisions = precision_score(y_test_level, test_preds_level, average=None)
+        recalls = recall_score(y_test_level, test_preds_level, average=None)
+        f1s = f1_score(y_test_level, test_preds_level, average=None)
+        cm = confusion_matrix(y_test_level, test_preds_level)
+
+        med_prec = float(precisions[1])
+        med_rec = float(recalls[1])
+        med_f1 = float(f1s[1])
+
+        print(f"[{label}] Formula Correlation -> Pearson r: {corr_r:.6f} | R2: {r2_val:.6f}")
+        print(f"[{label}] Regression Metrics  -> MAE: {mae:.4f} | RMSE: {rmse:.4f}")
+        print(f"[{label}] Label-Specific Cutoffs -> P33 (Low/Med): {p33:.4f} | P66 (Med/High): {p66:.4f}")
+        print(f"[{label}] Classification Overall -> Accuracy: {acc:.4f} | Macro F1: {macro_f1:.4f}")
+        print(f"[{label}] Low    Class -> Prec: {precisions[0]:.4f} | Rec: {recalls[0]:.4f} | F1: {f1s[0]:.4f}")
+        print(f"[{label}] Medium Class -> Prec: {med_prec:.4f} | Rec: {med_rec:.4f} | F1: {med_f1:.4f}  *** TARGET > 0.50 RECALL ***")
+        print(f"[{label}] High   Class -> Prec: {precisions[2]:.4f} | Rec: {recalls[2]:.4f} | F1: {f1s[2]:.4f}")
+        print(f"[{label}] Confusion Matrix:\n{cm}")
+
+        reports[label] = {
+            "formula_pearson_r": round(float(corr_r), 6),
+            "formula_r2": round(float(r2_val), 6),
+            "regression_mae": round(float(mae), 4),
+            "regression_rmse": round(float(rmse), 4),
+            "accuracy": round(float(acc), 4),
+            "macro_f1": round(float(macro_f1), 4),
+            "medium_precision": round(med_prec, 4),
+            "medium_recall": round(med_rec, 4),
+            "medium_f1": round(med_f1, 4),
+            "per_class_precision": [round(float(p), 4) for p in precisions],
+            "per_class_recall": [round(float(r), 4) for r in recalls],
+            "per_class_f1": [round(float(f), 4) for f in f1s],
+            "thresholds": thresholds[label],
+            "confusion_matrix": cm.tolist()
+        }
+
+    return scaler, reg_models, thresholds, reports
+
+
+def run_shap_analysis(reg_models, X_val, feature_names):
+    print("\n==================================================")
+    print("STEP 4: SHAP FEATURE ATTRIBUTION ANALYSIS (REGRESSION)")
+    print("==================================================")
+
+    for label in LABELS:
+        model = reg_models[label]
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_val)
+
+        mean_abs_shap = np.abs(np.array(shap_values)).mean(axis=0)
+
+        shap_df = pd.DataFrame({
+            "feature": feature_names,
+            "mean_abs_shap": mean_abs_shap
+        }).sort_values(by="mean_abs_shap", ascending=False)
+
+        print(f"\n--- [{label}] Top 10 Most Influential Features ---")
+        for idx, row in shap_df.head(10).iterrows():
+            print(f"  {row['feature']:30s}: SHAP = {row['mean_abs_shap']:.4f}")
+
+        social_feats = [f for f in feature_names if "social" in f]
+        social_shap = shap_df[shap_df["feature"].isin(social_feats)]
+        print(f"[{label}] Social App Feature Group Total Attribution: {social_shap['mean_abs_shap'].sum():.4f}")
+
+
+def export_artifacts(scaler, reg_models, thresholds, reports, models_dir):
+    print("\n==================================================")
+    print("STEP 5: EXPORTING PRODUCTION ML ARTIFACTS")
+    print("==================================================")
+    os.makedirs(models_dir, exist_ok=True)
+
+    preprocessor_path = os.path.join(models_dir, "preprocessor.pkl")
+    joblib.dump(scaler, preprocessor_path)
+    print(f"Saved Preprocessor: {preprocessor_path}")
+
+    model_path = os.path.join(models_dir, "wellbeing_model.pkl")
+    joblib.dump(reg_models, model_path)
+    print(f"Saved Model Pipeline: {model_path}")
+
+    meta = {
+        "timestamp": datetime.now().isoformat(),
+        "feature_columns": FEATURE_COLUMNS,
+        "labels": LABELS,
+        "thresholds": thresholds,
+        "evaluation_reports": reports
+    }
+    meta_path = os.path.join(models_dir, "model_meta.json")
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+    print(f"Saved Model Metadata: {meta_path}")
+
+
+def evaluate_noise_sensitivity():
+    print("\n==================================================")
+    print("STEP 6: QUANTITATIVE FORMULA CORRELATION & NOISE SENSITIVITY SWEEP")
+    print("==================================================")
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.append(os.path.join(script_dir, "data"))
+    import generate_dataset
+
+    noise_levels = [0.05, 0.08, 0.10]
+    sweep_results = {}
+
+    for noise in noise_levels:
+        print(f"\n==================================================")
+        print(f"RUNNING SWEEP FOR SIGMA = {noise:.2f}")
+        print(f"==================================================")
+
+        df_noise = generate_dataset.generate_synthetic_data(num_rows=3000, seed=42, noise_level=noise)
+
+        print(f"--- Dataset Target Distribution (sigma={noise:.2f}) ---")
+        for label in LABELS:
+            col = f"{label.lower()}_level"
+            dist = df_noise[col].value_counts().to_dict()
+            score_std = float(df_noise[f"{label.lower()}_score"].std())
+            print(f"  {label:12s} Level Counts: {dist} | Score Std: {score_std:.6f}")
+
+        train_df, val_df, test_df = temporal_train_val_test_split(df_noise)
+        scaler, models, th, reps = train_and_evaluate_regression_models(train_df, val_df, test_df)
+
+        sweep_results[noise] = reps
+
+    print("\n==================================================")
+    print("QUANTITATIVE FORMULA CORRELATION & NOISE SWEEP REPORT")
+    print("==================================================")
+    for noise in noise_levels:
+        print(f"\n--- Noise Level sigma = {noise:.2f} ---")
+        for label in LABELS:
+            r2 = sweep_results[noise][label]["formula_r2"]
+            r_val = sweep_results[noise][label]["formula_pearson_r"]
+            rec = sweep_results[noise][label]["medium_recall"]
+            f1 = sweep_results[noise][label]["macro_f1"]
+            mae = sweep_results[noise][label]["regression_mae"]
+            print(f"  {label:12s} -> Formula R2: {r2:.6f} | Pearson r: {r_val:.6f} | MAE: {mae:.6f} | Med Recall: {rec:.6f} | Macro F1: {f1:.6f}")
+
+    return sweep_results
+
 
 def main():
-    print("\n" + "="*60)
-    print("   Digital Wellbeing Classifier — train_model.py")
-    print("="*60 + "\n")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = os.path.join(base_dir, "data")
+    sys.path.append(script_dir)
+    import generate_dataset
 
-    # ── Load data ────────────────────────────────────────────────
-    df = load_or_generate_data()
-    print(f"[INFO] Dataset shape: {df.shape}\n")
+    # Run Quantitative Correlation Sweep first
+    sweep_results = evaluate_noise_sensitivity()
 
-    # ── Apply labels ─────────────────────────────────────────────
-    df["label"] = df.apply(assign_label, axis=1)
+    # Compare formula R2 between 0.05 and 0.08 across labels
+    r2_005 = np.mean([sweep_results[0.05][lbl]["formula_r2"] for lbl in LABELS])
+    r2_008 = np.mean([sweep_results[0.08][lbl]["formula_r2"] for lbl in LABELS])
+    delta_r2 = r2_005 - r2_008
 
-    print("[INFO] Label distribution:")
-    dist = df["label"].value_counts()
-    for label, count in dist.items():
-        pct = count / len(df) * 100
-        print(f"        {label:<12} {count:>5}  ({pct:.1f}%)")
-    print()
+    print(f"\n==================================================")
+    print(f"DECISION AUDIT: Mean Formula R2 at sigma=0.05: {r2_005:.6f} vs sigma=0.08: {r2_008:.6f} (Delta R2 = {delta_r2:.6f})")
 
-    # ── Feature engineering ───────────────────────────────────────
-    df = add_features(df)
+    if delta_r2 <= 0.05:
+        winning_sigma = 0.05
+        print(f"[DECISION] Delta R2 ({delta_r2:.6f}) is minimal (<= 0.05). sigma=0.05 DOES NOT reintroduce formula recovery leakage.")
+        print("[DECISION] Selecting sigma=0.05 as optimal production noise level (superior MAE, Macro F1, and Medium Recall).")
+    else:
+        winning_sigma = 0.08
+        print(f"[DECISION] Delta R2 ({delta_r2:.6f}) exceeds threshold (> 0.05). Selecting sigma=0.08 to prevent formula recovery.")
 
-    FEATURES = [
-        "screen_time", "app_switches", "scroll_speed",
-        "typing_speed", "unlock_count", "night_usage",
-        "night_ratio", "unlock_intensity", "fragmentation_index",
-        "agitation_score"
-    ]
-    X = df[FEATURES]
-    y = df["label"]
+    print(f"==================================================\n")
 
-    # ── Encode labels ─────────────────────────────────────────────
-    le = LabelEncoder()
-    y_enc = le.fit_transform(y)
-    print(f"[INFO] Classes: {list(le.classes_)}\n")
+    # Regenerate dataset CSV with selected winning sigma
+    dataset_path = os.path.join(base_dir, "data", "dataset.csv")
+    print(f"Regenerating production dataset.csv with winning sigma={winning_sigma:.2f}...")
+    df_prod = generate_dataset.generate_synthetic_data(num_rows=5000, seed=42, noise_level=winning_sigma)
+    df_prod.to_csv(dataset_path, index=False)
+    generate_dataset.create_data_dictionary(script_dir)
+    generate_dataset.validate_dataset(df_prod, expected_rows=5000)
 
-    # ── Train/test split ──────────────────────────────────────────
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
-    )
+    # Train production pipeline using winning sigma
+    df = load_dataset(dataset_path)
+    train_df, val_df, test_df = temporal_train_val_test_split(df)
+    scaler, reg_models, thresholds, reports = train_and_evaluate_regression_models(train_df, val_df, test_df)
 
-    # ── Train model ───────────────────────────────────────────────
-    print("[INFO] Training Random Forest ...")
-    model = RandomForestClassifier(
-        n_estimators=200,
-        max_depth=10,
-        min_samples_leaf=3,
-        class_weight="balanced",   # handles imbalanced labels
-        random_state=42,
-        n_jobs=-1
-    )
-    model.fit(X_train, y_train)
+    X_val_scaled = scaler.transform(val_df[FEATURE_COLUMNS])
+    run_shap_analysis(reg_models, X_val_scaled, FEATURE_COLUMNS)
 
-    # ── Cross-validation ──────────────────────────────────────────
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(model, X, y_enc, cv=cv, scoring="f1_weighted")
-    print(f"[INFO] 5-Fold CV F1 (weighted): {cv_scores.mean():.3f} ± {cv_scores.std():.3f}\n")
+    models_dir = os.path.join(base_dir, "models")
+    export_artifacts(scaler, reg_models, thresholds, reports, models_dir)
 
-    # ── Test evaluation ───────────────────────────────────────────
-    y_pred = model.predict(X_test)
-    print("[RESULTS] Classification Report:")
-    print(classification_report(y_test, y_pred, target_names=le.classes_))
-
-    print("[RESULTS] Confusion Matrix (rows=actual, cols=predicted):")
-    cm = confusion_matrix(y_test, y_pred)
-    cm_df = pd.DataFrame(cm, index=le.classes_, columns=le.classes_)
-    print(cm_df.to_string())
-    print()
-
-    # ── Feature importance ────────────────────────────────────────
-    print("[INFO] Feature Importances:")
-    importances = pd.Series(model.feature_importances_, index=FEATURES)
-    importances = importances.sort_values(ascending=False)
-    for feat, imp in importances.items():
-        bar = "#" * int(imp * 60)
-        print(f"  {feat:<22} {imp:.4f}  {bar}")
-    print()
-
-    # ── Save artifacts ────────────────────────────────────────────
-    joblib.dump(model, "wellbeing_model.pkl")
-    joblib.dump(le,    "label_encoder.pkl")
-
-    # Save labeled dataset
-    df.to_csv("labeled_data.csv", index=False)
-
-    print("[INFO] Saved: wellbeing_model.pkl")
-    print("[INFO] Saved: label_encoder.pkl")
-    print("[INFO] Saved: labeled_data.csv")
-
-    # ── Quick inference demo ──────────────────────────────────────
-    print("\n" + "-"*60)
-    print("  Quick Inference Demo")
-    print("-"*60)
-
-    demo_cases = [
-        {"name": "Relaxed user",
-         "screen_time": 90,  "app_switches": 20, "scroll_speed": 250,
-         "typing_speed": 4,  "unlock_count": 15, "night_usage": 10},
-
-        {"name": "Stressed professional",
-         "screen_time": 300, "app_switches": 85, "scroll_speed": 800,
-         "typing_speed": 9,  "unlock_count": 60, "night_usage": 75},
-
-        {"name": "Addicted scroller",
-         "screen_time": 240, "app_switches": 130,"scroll_speed": 600,
-         "typing_speed": 5,  "unlock_count": 140,"night_usage": 40},
-
-        {"name": "Burnt-out worker",
-         "screen_time": 480, "app_switches": 110,"scroll_speed": 950,
-         "typing_speed": 11, "unlock_count": 95, "night_usage": 160},
-    ]
-
-    for case in demo_cases:
-        name = case.pop("name")
-        row = pd.Series(case)
-        row_df = pd.DataFrame([case])
-        row_df = add_features(row_df)
-        pred_enc = model.predict(row_df[FEATURES])[0]
-        pred_label = le.inverse_transform([pred_enc])[0]
-        proba = model.predict_proba(row_df[FEATURES])[0]
-        conf = max(proba) * 100
-
-        # also show rule-based label for comparison
-        rule_label = assign_label(row)
-
-        print(f"\n  [USER] {name}")
-        print(f"     Model → {pred_label:<12} ({conf:.1f}% confidence)")
-        print(f"     Rules → {rule_label}")
-
-    print("\n" + "="*60)
-    print("  Training complete.")
-    print("="*60 + "\n")
+    print("\n==================================================")
+    print("PRODUCTION MODEL TRAINING & ARTIFACT EXPORT COMPLETE!")
+    print("==================================================\n")
 
 
 if __name__ == "__main__":

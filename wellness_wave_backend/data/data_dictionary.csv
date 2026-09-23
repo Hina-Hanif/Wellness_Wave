@@ -1,0 +1,28 @@
+column_name,data_type,description
+record_id,string,Unique record identifier
+user_id,string,Synthetic user identifier
+date,string,Calendar date (YYYY-MM-DD)
+screen_time_minutes,float,Daily screen time minutes
+unlock_count,integer,Phone unlock count
+app_switch_count,integer,Application switch count
+typing_speed_wpm,float,Typing speed wpm
+scroll_speed,float,Scroll speed px/s
+night_usage_minutes,float,Night usage minutes
+social_app_minutes,float,Social app usage minutes
+productive_app_minutes,float,Productive app usage minutes
+social_ratio,float,Social app minutes / total screen time
+social_opens_per_hour,float,Social app opens per hour
+social_session_avg,float,Average social app session duration
+social_session_var,float,Variance of social app session duration
+late_night_social_ratio,float,Late-night social usage ratio
+social_inter_open_gap_min,float,Average minutes between social opens
+prev_label_lag1,integer,Previous day state (lag-1)
+stress_score,float,Continuous stress risk score
+anxiety_score,float,Continuous anxiety risk score
+burnout_score,float,Continuous burnout risk score
+addiction_score,float,Continuous addiction risk score
+stress_level,string,"Stress severity level (Low, Medium, High)"
+anxiety_level,string,"Anxiety severity level (Low, Medium, High)"
+burnout_level,string,"Burnout severity level (Low, Medium, High)"
+addiction_level,string,"Addiction severity level (Low, Medium, High)"
+label,string,Primary behavioral state

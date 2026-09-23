@@ -334,6 +334,12 @@ class BehavioralAccessibilityService : AccessibilityService() {
             1
         }
 
+        val (socialAppMinutes, productiveAppMinutes) = try {
+            monitor.getCategoryUsageMinutes(currentScreenTime)
+        } catch (e: Exception) {
+            Pair(0L, 0L)
+        }
+
         val record = BehaviorRecord(
             timestamp = System.currentTimeMillis(),
             screenTime = currentScreenTime,
@@ -363,8 +369,12 @@ class BehavioralAccessibilityService : AccessibilityService() {
                     scroll_speed = scrollVelocityAvg.value,
                     typing_speed = typingCps.value,
                     unlock_count = finalUnlocks,
-                    night_usage = currentNightUsage
+                    night_usage = currentNightUsage,
+                    social_app_minutes = socialAppMinutes,
+                    productive_app_minutes = productiveAppMinutes
                 )
+                
+                Log.d(TAG, "[Telemetry] Screen time: $currentScreenTime, Social minutes: $socialAppMinutes, Productive minutes: $productiveAppMinutes")
                 
                 val response = com.example.myapplication.api.RetrofitClient.instance.collectData(realTimeData)
                 if (response.isSuccessful) {

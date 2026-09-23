@@ -1,0 +1,66 @@
+WELLNESS WAVE - MACHINE LEARNING MODEL EVALUATION REPORT
+=========================================================
+
+IMPORTANT DISCLAIMER & NON-CLINICAL NOTICE:
+Wellness Wave is a behavioral wellbeing application. Target categories
+(Balanced, Stress, Addiction, Burnout) represent synthetic behavioral
+project categories and MUST NOT be presented as medical diagnoses.
+All performance metrics are obtained on a synthetic dataset and DO NOT
+establish real-world clinical validity.
+
+1. DATASET & PREPROCESSING SUMMARY
+----------------------------------
+Total Rows           : 5000
+Total Synthetic Users: 100
+Date Range           : 2026-01-01 to 2026-02-19
+Train Set            : 3500 rows (70 users)
+Validation Set       : 750 rows (15 users)
+Test Set             : 750 rows (15 users)
+Features Used (12) : screen_time_minutes, unlock_count, app_switch_count, typing_speed_wpm, scroll_speed, night_usage_minutes, social_app_minutes, productive_app_minutes, night_ratio, unlock_intensity, fragmentation_index, agitation_score
+Excluded Features    : record_id, user_id, date, self_report_score
+
+2. RESEARCH PAPER COMPARISON TABLE
+----------------------------------
+Model                     | Accuracy | Macro Prec | Macro Rec | Macro F1 | Weighted F1
+--------------------------------------------------------------------------------
+Logistic Regression       |   0.9987 |     0.9987 |    0.9987 |   0.9987 |      0.9987
+Random Forest             |   1.0000 |     1.0000 |    1.0000 |   1.0000 |      1.0000
+XGBoost                   |   1.0000 |     1.0000 |    1.0000 |   1.0000 |      1.0000
+HistGradientBoosting      |   1.0000 |     1.0000 |    1.0000 |   1.0000 |      1.0000
+
+SELECTED MODEL : Random Forest
+
+3. FINAL UNTOUCHED TEST SET PERFORMANCE
+----------------------------------------
+Test Accuracy        : 1.0000
+Test Macro Precision  : 1.0000
+Test Macro Recall     : 1.0000
+Test Macro F1-Score   : 1.0000
+Test Weighted F1      : 1.0000
+
+Per-Class Metrics (Test Set):
+  Addiction    -> Precision: 1.0000, Recall: 1.0000, F1-Score: 1.0000
+  Balanced     -> Precision: 1.0000, Recall: 1.0000, F1-Score: 1.0000
+  Burnout      -> Precision: 1.0000, Recall: 1.0000, F1-Score: 1.0000
+  Stress       -> Precision: 1.0000, Recall: 1.0000, F1-Score: 1.0000
+
+Overfitting & Generalization Analysis:
+  Train Macro F1      : 1.0000
+  Validation Macro F1 : 1.0000
+  Test Macro F1       : 1.0000
+  Train-Test Gap      : 0.0000
+
+4. FEATURE IMPORTANCE RANKING
+-----------------------------
+  social_app_minutes        : 0.1946
+  screen_time_minutes       : 0.1337
+  scroll_speed              : 0.1297
+  night_usage_minutes       : 0.1118
+  app_switch_count          : 0.0962
+  agitation_score           : 0.0821
+  typing_speed_wpm          : 0.0711
+  unlock_count              : 0.0705
+  fragmentation_index       : 0.0593
+  night_ratio               : 0.0281
+  productive_app_minutes    : 0.0219
+  unlock_intensity          : 0.0009

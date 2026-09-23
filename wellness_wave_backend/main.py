@@ -65,12 +65,14 @@ async def submit_daily_data(metrics: UsageMetrics):
 
 class RealTimeData(BaseModel):
     user_id: str
-    screen_time: int
+    screen_time: float
     app_switches: int
     scroll_speed: float
     typing_speed: float
     unlock_count: int
-    night_usage: int
+    night_usage: float
+    social_app_minutes: Optional[float] = 0.0
+    productive_app_minutes: Optional[float] = 0.0
 
 @app.post("/collect-data")
 async def collect_data(data: RealTimeData):
@@ -83,7 +85,11 @@ async def collect_data(data: RealTimeData):
         with open(file_path, mode="a", newline="") as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(["user_id", "timestamp", "screen_time", "app_switches", "scroll_speed", "typing_speed", "unlock_count", "night_usage"])
+                writer.writerow([
+                    "user_id", "timestamp", "screen_time", "app_switches", 
+                    "scroll_speed", "typing_speed", "unlock_count", "night_usage",
+                    "social_app_minutes", "productive_app_minutes"
+                ])
             
             writer.writerow([
                 data.user_id,
@@ -93,9 +99,12 @@ async def collect_data(data: RealTimeData):
                 data.scroll_speed,
                 data.typing_speed,
                 data.unlock_count,
-                data.night_usage
+                data.night_usage,
+                data.social_app_minutes if data.social_app_minutes is not None else 0.0,
+                data.productive_app_minutes if data.productive_app_minutes is not None else 0.0
             ])
             
+        print(f"[Telemetry] Stored for {data.user_id}: ScreenTime={data.screen_time}, Social={data.social_app_minutes}, Productive={data.productive_app_minutes}")
         return {"status": "success", "message": "Real-time data stored successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,6 +138,12 @@ async def get_history(user_id: str):
         "user_id": user_id,
         "history": history
     }
+
+from api.spike_engine import spike_engine
+
+@app.get("/recovery-summary")
+async def get_recovery_summary(user_id: str):
+    return spike_engine.get_recovery_summary(user_id)
 
 if __name__ == "__main__":
     import uvicorn

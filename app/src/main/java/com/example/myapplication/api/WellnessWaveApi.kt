@@ -21,4 +21,7 @@ interface WellnessWaveApi {
 
     @GET("/history")
     suspend fun getHistory(@Query("user_id") userId: String): Response<PredictionHistoryResponse>
+
+    @GET("/recovery-summary")
+    suspend fun getRecoverySummary(@Query("user_id") userId: String): Response<com.example.myapplication.models.RecoverySummaryResponse>
 }

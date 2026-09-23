@@ -1,0 +1,252 @@
+{
+  "timestamp": "2026-09-22T17:53:53.960132",
+  "feature_columns": [
+    "screen_time_minutes",
+    "unlock_count",
+    "app_switch_count",
+    "typing_speed_wpm",
+    "scroll_speed",
+    "night_usage_minutes",
+    "social_app_minutes",
+    "productive_app_minutes",
+    "night_ratio",
+    "unlock_intensity",
+    "fragmentation_index",
+    "agitation_score",
+    "social_ratio",
+    "social_opens_per_hour",
+    "social_session_avg",
+    "social_session_var",
+    "late_night_social_ratio",
+    "social_inter_open_gap_min",
+    "prev_label_lag1",
+    "roll_3d_screen_time_minutes",
+    "roll_7d_screen_time_minutes",
+    "roll_3d_social_ratio",
+    "roll_7d_social_ratio",
+    "roll_3d_app_switch_count",
+    "roll_7d_app_switch_count",
+    "roll_3d_scroll_speed",
+    "roll_7d_scroll_speed",
+    "roll_3d_typing_speed_wpm",
+    "roll_7d_typing_speed_wpm",
+    "dod_pct_screen_time_minutes",
+    "dod_pct_app_switch_count",
+    "dod_pct_scroll_speed",
+    "dod_pct_typing_speed_wpm"
+  ],
+  "labels": [
+    "Stress",
+    "Anxiety",
+    "Burnout",
+    "Addiction"
+  ],
+  "thresholds": {
+    "Stress": {
+      "p33": 0.211,
+      "p66": 0.4364
+    },
+    "Anxiety": {
+      "p33": 0.1332,
+      "p66": 0.2857
+    },
+    "Burnout": {
+      "p33": 0.307,
+      "p66": 0.4627
+    },
+    "Addiction": {
+      "p33": 0.2819,
+      "p66": 0.3791
+    }
+  },
+  "evaluation_reports": {
+    "Stress": {
+      "formula_pearson_r": 0.996005,
+      "formula_r2": 0.991891,
+      "regression_mae": 0.0416,
+      "regression_rmse": 0.0517,
+      "accuracy": 0.7013,
+      "macro_f1": 0.7021,
+      "medium_precision": 0.5735,
+      "medium_recall": 0.5714,
+      "medium_f1": 0.5725,
+      "per_class_precision": [
+        0.6976,
+        0.5735,
+        0.8352
+      ],
+      "per_class_recall": [
+        0.7061,
+        0.5714,
+        0.8291
+      ],
+      "per_class_f1": [
+        0.7018,
+        0.5725,
+        0.8321
+      ],
+      "thresholds": {
+        "p33": 0.211,
+        "p66": 0.4364
+      },
+      "confusion_matrix": [
+        [
+          173,
+          72,
+          0
+        ],
+        [
+          75,
+          160,
+          45
+        ],
+        [
+          0,
+          47,
+          228
+        ]
+      ]
+    },
+    "Anxiety": {
+      "formula_pearson_r": 0.995699,
+      "formula_r2": 0.991369,
+      "regression_mae": 0.0407,
+      "regression_rmse": 0.0521,
+      "accuracy": 0.6875,
+      "macro_f1": 0.6871,
+      "medium_precision": 0.5338,
+      "medium_recall": 0.5318,
+      "medium_f1": 0.5328,
+      "per_class_precision": [
+        0.71,
+        0.5338,
+        0.8189
+      ],
+      "per_class_recall": [
+        0.7403,
+        0.5318,
+        0.7891
+      ],
+      "per_class_f1": [
+        0.7249,
+        0.5328,
+        0.8037
+      ],
+      "thresholds": {
+        "p33": 0.1332,
+        "p66": 0.2857
+      },
+      "confusion_matrix": [
+        [
+          191,
+          66,
+          1
+        ],
+        [
+          78,
+          142,
+          47
+        ],
+        [
+          0,
+          58,
+          217
+        ]
+      ]
+    },
+    "Burnout": {
+      "formula_pearson_r": 0.995274,
+      "formula_r2": 0.990549,
+      "regression_mae": 0.0421,
+      "regression_rmse": 0.0524,
+      "accuracy": 0.805,
+      "macro_f1": 0.804,
+      "medium_precision": 0.6854,
+      "medium_recall": 0.7176,
+      "medium_f1": 0.7011,
+      "per_class_precision": [
+        0.888,
+        0.6854,
+        0.8431
+      ],
+      "per_class_recall": [
+        0.8394,
+        0.7176,
+        0.8524
+      ],
+      "per_class_f1": [
+        0.863,
+        0.7011,
+        0.8477
+      ],
+      "thresholds": {
+        "p33": 0.307,
+        "p66": 0.4627
+      },
+      "confusion_matrix": [
+        [
+          230,
+          44,
+          0
+        ],
+        [
+          29,
+          183,
+          43
+        ],
+        [
+          0,
+          40,
+          231
+        ]
+      ]
+    },
+    "Addiction": {
+      "formula_pearson_r": 0.994503,
+      "formula_r2": 0.988918,
+      "regression_mae": 0.041,
+      "regression_rmse": 0.0516,
+      "accuracy": 0.7625,
+      "macro_f1": 0.7624,
+      "medium_precision": 0.677,
+      "medium_recall": 0.6259,
+      "medium_f1": 0.6505,
+      "per_class_precision": [
+        0.7638,
+        0.677,
+        0.8419
+      ],
+      "per_class_recall": [
+        0.815,
+        0.6259,
+        0.8545
+      ],
+      "per_class_f1": [
+        0.7886,
+        0.6505,
+        0.8481
+      ],
+      "thresholds": {
+        "p33": 0.2819,
+        "p66": 0.3791
+      },
+      "confusion_matrix": [
+        [
+          207,
+          46,
+          1
+        ],
+        [
+          62,
+          174,
+          42
+        ],
+        [
+          2,
+          37,
+          229
+        ]
+      ]
+    }
+  }
+}

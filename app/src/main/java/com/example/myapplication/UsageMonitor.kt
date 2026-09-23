@@ -55,6 +55,48 @@ class  UsageMonitor(private val context: Context) {
         return getPreciseUsageMinutes(usageStatsManager, startTime, endTime)
     }
 
+    /**
+     * Computes today's real foreground usage minutes for SOCIAL and PRODUCTIVE app categories.
+     * Returns Pair(socialAppMinutes, productiveAppMinutes).
+     */
+    fun getCategoryUsageMinutes(totalScreenTimeMinutes: Long = 0L): Pair<Long, Long> {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startTime = calendar.timeInMillis
+
+        val stats = usageStatsManager.queryAndAggregateUsageStats(startTime, endTime)
+        var socialMs = 0L
+        var productiveMs = 0L
+
+        stats.forEach { (packageName, usageStat) ->
+            val fgTime = usageStat.totalTimeInForeground
+            if (fgTime > 0) {
+                when (com.example.myapplication.data.tracking.AppCategoryClassifier.classify(packageName)) {
+                    com.example.myapplication.data.tracking.AppCategory.SOCIAL -> socialMs += fgTime
+                    com.example.myapplication.data.tracking.AppCategory.PRODUCTIVE -> productiveMs += fgTime
+                    else -> {}
+                }
+            }
+        }
+
+        var socialMin = socialMs / 1000 / 60
+        var productiveMin = productiveMs / 1000 / 60
+
+        if (totalScreenTimeMinutes > 0) {
+            socialMin = socialMin.coerceAtMost(totalScreenTimeMinutes)
+            productiveMin = productiveMin.coerceAtMost(totalScreenTimeMinutes)
+        }
+
+        return Pair(socialMin, productiveMin)
+    }
+
+
     fun getTodayUnlockCount(): Int {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()

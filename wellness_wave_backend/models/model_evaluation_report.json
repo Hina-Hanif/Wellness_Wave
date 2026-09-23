@@ -1,0 +1,129 @@
+{
+    "dataset_size": 5000,
+    "number_of_users": 100,
+    "date_range": "2026-01-01 to 2026-02-19",
+    "features_used": [
+        "screen_time_minutes",
+        "unlock_count",
+        "app_switch_count",
+        "typing_speed_wpm",
+        "scroll_speed",
+        "night_usage_minutes",
+        "social_app_minutes",
+        "productive_app_minutes",
+        "night_ratio",
+        "unlock_intensity",
+        "fragmentation_index",
+        "agitation_score"
+    ],
+    "excluded_features": [
+        "record_id",
+        "user_id",
+        "date",
+        "self_report_score"
+    ],
+    "train_size": 3500,
+    "validation_size": 750,
+    "test_size": 750,
+    "val_results": {
+        "Logistic Regression": {
+            "accuracy": 0.9987,
+            "macro_precision": 0.9987,
+            "macro_recall": 0.9987,
+            "macro_f1": 0.9987,
+            "weighted_f1": 0.9987
+        },
+        "Random Forest": {
+            "accuracy": 1.0,
+            "macro_precision": 1.0,
+            "macro_recall": 1.0,
+            "macro_f1": 1.0,
+            "weighted_f1": 1.0
+        },
+        "XGBoost": {
+            "accuracy": 1.0,
+            "macro_precision": 1.0,
+            "macro_recall": 1.0,
+            "macro_f1": 1.0,
+            "weighted_f1": 1.0
+        },
+        "HistGradientBoosting": {
+            "accuracy": 1.0,
+            "macro_precision": 1.0,
+            "macro_recall": 1.0,
+            "macro_f1": 1.0,
+            "weighted_f1": 1.0
+        }
+    },
+    "selected_model": "Random Forest",
+    "test_accuracy": 1.0,
+    "test_macro_precision": 1.0,
+    "test_macro_recall": 1.0,
+    "test_macro_f1": 1.0,
+    "test_weighted_f1": 1.0,
+    "per_class_metrics": {
+        "Addiction": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1_score": 1.0
+        },
+        "Balanced": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1_score": 1.0
+        },
+        "Burnout": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1_score": 1.0
+        },
+        "Stress": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1_score": 1.0
+        }
+    },
+    "confusion_matrix": [
+        [
+            107,
+            0,
+            0,
+            0
+        ],
+        [
+            0,
+            250,
+            0,
+            0
+        ],
+        [
+            0,
+            0,
+            143,
+            0
+        ],
+        [
+            0,
+            0,
+            0,
+            250
+        ]
+    ],
+    "feature_importance": {
+        "social_app_minutes": 0.1946,
+        "screen_time_minutes": 0.1337,
+        "scroll_speed": 0.1297,
+        "night_usage_minutes": 0.1118,
+        "app_switch_count": 0.0962,
+        "agitation_score": 0.0821,
+        "typing_speed_wpm": 0.0711,
+        "unlock_count": 0.0705,
+        "fragmentation_index": 0.0593,
+        "night_ratio": 0.0281,
+        "productive_app_minutes": 0.0219,
+        "unlock_intensity": 0.0009
+    },
+    "training_timestamp": "2026-09-21T22:14:50.200494",
+    "random_seed": 42,
+    "disclaimer": "SYNTHETIC DATASET ONLY. Target categories are behavioral project labels, not medical diagnoses. Synthetic performance does not establish clinical validity."
+}

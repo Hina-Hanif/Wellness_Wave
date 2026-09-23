@@ -60,6 +60,8 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
     var currentTime by remember { mutableStateOf("--:-- AM") }
     var screenTimeText by remember { mutableStateOf("--") }
     var nightUsageText by remember { mutableStateOf("--") }
+    var socialAppText by remember { mutableStateOf("--") }
+    var productiveAppText by remember { mutableStateOf("--") }
     var unlockCount by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -88,10 +90,14 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
                 val unlocks = monitor.getTodayUnlockCount()
                 val intervals = monitor.getTodayUsageIntervals(12) 
                 
+                val (socialMin, productiveMin) = monitor.getCategoryUsageMinutes(total)
+                
                 screenTimeMinutes = total
                 unlockCount = unlocks
                 screenTimeText = if (total >= 60) "${total/60}h ${total%60}m" else "${total}m"
                 nightUsageText = if (night >= 60) "${night/60}h ${night%60}m" else "${night}m"
+                socialAppText = if (socialMin >= 60) "${socialMin/60}h ${socialMin%60}m" else "${socialMin}m"
+                productiveAppText = if (productiveMin >= 60) "${productiveMin/60}h ${productiveMin%60}m" else "${productiveMin}m"
                 liveScreenTimePoints = intervals
 
                 // Local dynamic behavioral analysis
@@ -101,6 +107,8 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
             } catch (_: Exception) { 
                 if (screenTimeText == "--") screenTimeText = "N/A"
                 if (nightUsageText == "--") nightUsageText = "0m"
+                if (socialAppText == "--") socialAppText = "0m"
+                if (productiveAppText == "--") productiveAppText = "0m"
             }
             
             // Only fetch remote data once or less frequently
@@ -218,6 +226,19 @@ fun BehaviorAnalyticsScreen(innerPadding: PaddingValues) {
             SmallStatCard(modifier = Modifier.weight(1f), title = "Scroll Speed", value = if (scrollVelocity > 0) "${scrollVelocity.toInt()}" else "0", subtitle = if (scrollErraticness > 1.5f) "⚠ Erratic" else "Smooth", color = if (scrollErraticness > 1.5f) Color(0xFFFF8A65) else MaterialTheme.colorScheme.primary, icon = Icons.Rounded.SwipeVertical)
             Spacer(modifier = Modifier.width(12.dp))
             SmallStatCard(modifier = Modifier.weight(1f), title = "Focus Switches", value = "$appSwitches", subtitle = "App fragmentation", color = MaterialTheme.colorScheme.secondary, icon = Icons.Rounded.Apps)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // ── App Category Usage ─────────────────────────────────
+        SectionLabel(text = "APP CATEGORY USAGE")
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            SmallStatCard(modifier = Modifier.weight(1f), title = "Social Usage", value = socialAppText, subtitle = "Social Apps", color = Color(0xFFE040FB), icon = Icons.Rounded.Share)
+            Spacer(modifier = Modifier.width(12.dp))
+            SmallStatCard(modifier = Modifier.weight(1f), title = "Productive Usage", value = productiveAppText, subtitle = "Work & Study", color = Color(0xFF00E676), icon = Icons.Rounded.Work)
         }
 
         Spacer(modifier = Modifier.height(24.dp))

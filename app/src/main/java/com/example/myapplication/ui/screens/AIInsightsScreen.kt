@@ -7,16 +7,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BatteryAlert
-import androidx.compose.material.icons.rounded.DirectionsRun
-import androidx.compose.material.icons.rounded.Nightlight
 import androidx.compose.material.icons.rounded.SelfImprovement
-import androidx.compose.material.icons.rounded.Spa
+import androidx.compose.material.icons.rounded.TrendingDown
+import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,21 +29,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.api.RetrofitClient
 import com.example.myapplication.models.PredictionResponse
+import com.example.myapplication.models.RecoverySummaryResponse
+import com.example.myapplication.models.LabelRecoveryTrend
 import com.example.myapplication.data.UsageDataManager
 import com.example.myapplication.models.UsageMetrics
 import com.example.myapplication.data.analysis.BehavioralInferenceEngine
 import com.example.myapplication.data.analysis.MentalStateReport
 import com.example.myapplication.data.tracking.BehavioralAccessibilityService
-import com.example.myapplication.data.tracking.NotificationReactionTracker
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 @Composable
 fun AIInsightsScreen(innerPadding: PaddingValues) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var prediction by remember { mutableStateOf<PredictionResponse?>(null) }
+    var recoverySummary by remember { mutableStateOf<RecoverySummaryResponse?>(null) }
     var localReport by remember { mutableStateOf<MentalStateReport?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var todayMetrics by remember { mutableStateOf<UsageMetrics?>(null) }
@@ -58,7 +56,6 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
     val manager = remember { UsageDataManager(context) }
     
     LaunchedEffect(typingCps, scrollVelocity, scrollErraticness, appSwitches) {
-        // Fetch current daily metrics (Mood was removed as signals take priority)
         todayMetrics = manager.getDailyMetrics()
         todayMetrics?.let {
             localReport = BehavioralInferenceEngine.analyze(it)
@@ -74,6 +71,11 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
                 val response = RetrofitClient.instance.getPrediction(userId)
                 if (response.isSuccessful) {
                     prediction = response.body()
+                }
+
+                val recResponse = RetrofitClient.instance.getRecoverySummary(userId)
+                if (recResponse.isSuccessful) {
+                    recoverySummary = recResponse.body()
                 }
             } catch (e: Exception) {
                 // Ignore API failure for UI layout tests
@@ -116,8 +118,9 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
                 Spacer(modifier = Modifier.height(32.dp))
             }
 
+            // Replaced Personalized Suggestions with YOUR RECOVERY TREND
             Text(
-                text = "PERSONALIZED SUGGESTIONS",
+                text = "YOUR RECOVERY TREND",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -125,17 +128,9 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
             )
             
             Spacer(modifier = Modifier.height(16.dp))
-        }
 
-        // Dynamic Suggestions based on 4-Dimensional AI Output
-        val suggestions = generateSuggestions(prediction, localReport)
-        
-        items(suggestions) { suggestion ->
-            SuggestionCard(suggestion = suggestion)
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        
-        item {
+            RecoveryTrendCard(recoverySummary = recoverySummary)
+
             Spacer(modifier = Modifier.height(90.dp))
         }
     }
@@ -143,7 +138,6 @@ fun AIInsightsScreen(innerPadding: PaddingValues) {
 
 @Composable
 fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateReport?, isLoading: Boolean) {
-    // Priority: Local Behavioral Analysis (v7) > Remote Prediction > Default "Balanced"
     val primaryText = localReport?.primaryState ?: prediction?.stress_level ?: (if (isLoading) "Analyzing..." else "Balanced")
     
     Card(
@@ -152,7 +146,7 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) { // Reduced from 20dp
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -163,11 +157,11 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                         imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = "AI",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp) // Reduced from 24dp
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Current State", // Simplified title for compactness
+                        text = "Current State",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -188,11 +182,9 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp)) // Reduced from 24dp
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Determine Overall Level from calibrated engine
             val currentLevel = localReport?.overallLevel ?: "Low"
-
             val targetProgress = when (currentLevel) {
                 "Low" -> 0.25f
                 "Medium" -> 0.55f
@@ -206,11 +198,10 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                 label = "stressBar"
             )
 
-            // Custom thick progress bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(12.dp) // Reduced from 16dp
+                    .height(12.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
             ) {
@@ -241,7 +232,7 @@ fun StressMeterCard(prediction: PredictionResponse?, localReport: MentalStateRep
                 Text("Overloaded", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
-            Spacer(modifier = Modifier.height(16.dp)) // Reduced from 24dp
+            Spacer(modifier = Modifier.height(16.dp))
             
             Text(
                 text = localReport?.overallSummary ?: prediction?.real_time_feedback ?: "Keep up the good habits. Your digital metrics look stable.",
@@ -374,88 +365,119 @@ private fun MentalStateGridItem(label: String, level: String, insight: String, i
     }
 }
 
-data class Suggestion(val title: String, val description: String, val icon: ImageVector, val color: Color)
-
-fun generateSuggestions(prediction: PredictionResponse?, localReport: MentalStateReport?): List<Suggestion> {
-    if (prediction == null && localReport == null) {
-        return listOf(
-            Suggestion("2-Minute Breathing", "A quick exercise to center your focus.", Icons.Rounded.Spa, Color(0xFF61D0C9)),
-            Suggestion("Screen Break", "Step away for 5 minutes.", Icons.Rounded.DirectionsRun, Color(0xFF6888F9))
-        )
-    }
-    
-    val list = mutableListOf<Suggestion>()
-    
-    // Check Levels from Local Analysis (High priority)
-    val addiction = localReport?.addictionLevel ?: "Low"
-    if (addiction != "Low") {
-        list.add(Suggestion("Device Placement", "Place your phone in another room to reduce reflexive unlocks.", Icons.Rounded.Warning, if (addiction == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
-    }
-    
-    val burnout = localReport?.burnoutLevel ?: "Low"
-    if (burnout != "Low") {
-        list.add(Suggestion("Digital Sunset", "You're showing fatigue. Enable Night Mode and put away screens 1 hour before bed.", Icons.Rounded.BatteryAlert, if (burnout == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
-    }
-    
-    val anxiety = localReport?.anxietyLevel ?: "Low"
-    if (anxiety != "Low") {
-        list.add(Suggestion("Interaction Pause", "Frequent pauses detected. Take 3 deep breaths and focus on a single physical object.", Icons.Rounded.SelfImprovement, if (anxiety == "High") Color(0xFFFF5252) else Color(0xFFFFB300)))
-    }
-    
-    val stress = localReport?.stressLevel ?: "Low"
-    if (stress != "Low") {
-        list.add(Suggestion("Physical Anchor", "High interaction arousal detected. A 5-minute walk will help lower your physiological stress.", Icons.Rounded.DirectionsRun, if (stress == "High") Color(0xFFFF5252) else Color(0xFF61D0C9)))
-    }
-    
-    // Default positive if no major flags
-    if (list.size < 2) {
-        list.add(Suggestion("Flow State", "Your typing and scrolling rhythm indicate a healthy flow. Stay focused!", Icons.Rounded.AutoAwesome, Color(0xFF61D0C9)))
-        list.add(Suggestion("Sleep Hygiene", "Reading a physical book tonight would be a great way to wind down.", Icons.Rounded.Nightlight, Color(0xFF6888F9)))
-    }
-    
-    return list.take(4) // Top 4 most relevant suggestions
-}
-
 @Composable
-fun SuggestionCard(suggestion: Suggestion) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                shape = CircleShape,
-                color = suggestion.color.copy(alpha = 0.1f),
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = suggestion.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = suggestion.color
-                    )
+fun RecoveryTrendCard(recoverySummary: RecoverySummaryResponse?) {
+    val labels = listOf("Stress", "Anxiety", "Burnout", "Addiction")
+    val trends = recoverySummary?.recovery_trends
+
+    if (recoverySummary != null && !recoverySummary.has_sufficient_history) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Text(
+                text = "Building your recovery baseline — check back next week.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(20.dp)
+            )
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            labels.forEach { label ->
+                val trend = trends?.get(label)
+                val spikesCount = trend?.spikes_this_week ?: 0
+                val pctTrend = trend?.recovery_velocity_trend_pct
+                val isFaster = trend?.is_faster
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            if (spikesCount > 0 && pctTrend != null && isFaster != null) {
+                                val tintColor = if (isFaster) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                Surface(
+                                    color = tintColor.copy(alpha = 0.1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isFaster) Icons.Rounded.TrendingUp else Icons.Rounded.TrendingDown,
+                                            contentDescription = null,
+                                            tint = tintColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "$pctTrend% ${if (isFaster) "faster" else "slower"}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = tintColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (spikesCount == 0) {
+                            Text(
+                                text = "No $label spikes this week — your baseline has been stable.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "$spikesCount ${if (spikesCount == 1) "spike" else "spikes"} this week",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (trend?.avg_recovery_time_min != null) {
+                                    Text(
+                                        text = "Avg recovery: ${trend.avg_recovery_time_min} mins",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (!trend?.trigger_summary.isNullOrEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Trigger: ${trend?.trigger_summary}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                    }
                 }
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column {
-                Text(
-                    text = suggestion.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = suggestion.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
-                )
             }
         }
     }
