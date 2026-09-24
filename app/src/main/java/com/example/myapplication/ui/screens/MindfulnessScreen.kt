@@ -174,7 +174,11 @@ fun MindfulnessScreen(innerPadding: PaddingValues) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Study Rescue Session Integration
+            val sessionManager = remember { com.example.myapplication.data.tracking.StudySessionManager.getInstance(context) }
+            StudyRescueSection(sessionManager = sessionManager)
 
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

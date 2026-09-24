@@ -75,10 +75,101 @@ object NotificationHelper {
         Log.d(TAG, "Hourly push reminder suppressed. Message kept in-app only: '$message'")
     }
 
+    const val CHANNEL_STUDY_RESCUE = "study_rescue_channel"
+    const val CHANNEL_NAME_STUDY_RESCUE = "Study Rescue Alerts"
+    const val STUDY_RESCUE_NOTIFICATION_ID = 8801
+
+    fun postStudyRescueIntervention(
+        context: Context,
+        sessionId: String,
+        interventionNumber: Int,
+        taskTitle: String,
+        isEscalated: Boolean
+    ): Boolean {
+        return try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            ensureChannel(nm, CHANNEL_STUDY_RESCUE, CHANNEL_NAME_STUDY_RESCUE, NotificationManager.IMPORTANCE_HIGH)
+
+            val title = if (isEscalated) {
+                "Focus Rescue Warning"
+            } else {
+                "Stay Focused on ${taskTitle.ifBlank { "Study" }}"
+            }
+
+            val body = if (isEscalated) {
+                "Second distraction detected during '${taskTitle.ifBlank { "Deep Focus" }}'. Resume studying or take a mindful break to stay on track."
+            } else {
+                "You appear off-task from '${taskTitle.ifBlank { "your session" }}'. Would you like to resume studying or take a short break?"
+            }
+
+            val contentPendingIntent = buildMainPendingIntent(context, "MINDFULNESS")
+
+            val resumeIntent = Intent(context, StudyRescueActionReceiver::class.java).apply {
+                action = StudyRescueActionReceiver.ACTION_RESUME_STUDYING
+                putExtra(StudyRescueActionReceiver.EXTRA_SESSION_ID, sessionId)
+                putExtra(StudyRescueActionReceiver.EXTRA_INTERVENTION_NUMBER, interventionNumber)
+            }
+            val resumePendingIntent = PendingIntent.getBroadcast(
+                context, 101, resumeIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val breakIntent = Intent(context, StudyRescueActionReceiver::class.java).apply {
+                action = StudyRescueActionReceiver.ACTION_TAKE_BREAK
+                putExtra(StudyRescueActionReceiver.EXTRA_SESSION_ID, sessionId)
+                putExtra(StudyRescueActionReceiver.EXTRA_INTERVENTION_NUMBER, interventionNumber)
+            }
+            val breakPendingIntent = PendingIntent.getBroadcast(
+                context, 102, breakIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val dismissIntent = Intent(context, StudyRescueActionReceiver::class.java).apply {
+                action = StudyRescueActionReceiver.ACTION_DISMISS_INTERVENTION
+                putExtra(StudyRescueActionReceiver.EXTRA_SESSION_ID, sessionId)
+                putExtra(StudyRescueActionReceiver.EXTRA_INTERVENTION_NUMBER, interventionNumber)
+            }
+            val dismissPendingIntent = PendingIntent.getBroadcast(
+                context, 103, dismissIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val builder = NotificationCompat.Builder(context, CHANNEL_STUDY_RESCUE)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(contentPendingIntent)
+                .setDeleteIntent(dismissPendingIntent)
+                .addAction(android.R.drawable.ic_media_play, "Resume", resumePendingIntent)
+                .addAction(android.R.drawable.ic_media_pause, "Take Break", breakPendingIntent)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", dismissPendingIntent)
+                .setColor(if (isEscalated) 0xFFD32F2F.toInt() else 0xFF1976D2.toInt())
+
+            nm.notify(STUDY_RESCUE_NOTIFICATION_ID, builder.build())
+            Log.i(TAG, "Study Rescue notification posted: intervention #$interventionNumber (escalated=$isEscalated)")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to post Study Rescue notification: ${e.message}", e)
+            false
+        }
+    }
+
+    fun cancelStudyRescueNotification(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(STUDY_RESCUE_NOTIFICATION_ID)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel Study Rescue notification: ${e.message}")
+        }
+    }
+
     private fun ensureChannel(nm: NotificationManager, id: String, name: String, importance: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(id, name, importance).apply {
-                description = "Wellness Wave behavioral insights"
+                description = "Wellness Wave notifications"
             }
             nm.createNotificationChannel(channel)
         }
