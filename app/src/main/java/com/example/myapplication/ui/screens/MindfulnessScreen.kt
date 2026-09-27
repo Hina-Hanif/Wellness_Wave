@@ -30,7 +30,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun MindfulnessScreen(innerPadding: PaddingValues) {
+fun MindfulnessScreen(
+    innerPadding: PaddingValues,
+    onNavigateToFocusRescue: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var localReport by remember { mutableStateOf<MentalStateReport?>(null) }
@@ -73,7 +76,7 @@ fun MindfulnessScreen(innerPadding: PaddingValues) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header (Centered)
@@ -104,77 +107,16 @@ fun MindfulnessScreen(innerPadding: PaddingValues) {
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             )
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Study Rescue Session Integration
+            val sessionManager = remember { com.example.myapplication.data.tracking.StudySessionManager.getInstance(context) }
+            StudyRescueSection(
+                sessionManager = sessionManager,
+                onNavigateToFocusRescue = onNavigateToFocusRescue
+            )
+
             Spacer(modifier = Modifier.height(32.dp))
-
-            // Gentle Reminder Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(32.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BoxDefaults.cardBorder()
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("🌿", fontSize = 24.sp)
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "Gentle Reminder",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = dynamicStatus,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(
-                        text = hourlyReminder.value,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 24.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🕒", fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Next check-in in 1 hour",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Stats row
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                MindfulnessStat(label = "Total Breaks", value = "3/5", subValue = "Good pace", progress = 0.6f, modifier = Modifier.weight(1f))
-                MindfulnessStat(label = "Focus Time", value = "4.2h", subValue = "+10%", progress = 0.8f, modifier = Modifier.weight(1f))
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-
         }
     }
 }

@@ -61,6 +61,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Wellness Monitoring" />
         </service>
+
+        <receiver
+            android:name=".data.tracking.StudyRescueActionReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

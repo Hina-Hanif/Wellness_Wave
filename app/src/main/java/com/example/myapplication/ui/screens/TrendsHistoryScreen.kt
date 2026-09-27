@@ -89,7 +89,7 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
     
     if (dynamicHistory.isNotEmpty()) {
         if (dynamicHistory.last().date == todayStr) {
-            val last = dynamicHistory.removeLast()
+            val last = dynamicHistory.removeAt(dynamicHistory.lastIndex)
             dynamicHistory.add(last.copy(stress_score = todayLiveScore))
         } else {
             dynamicHistory.add(HistoricalPrediction(todayStr, todayLiveScore, (todayMetrics?.screen_time?.toFloat() ?: 0f) / 60f))
@@ -131,6 +131,16 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
         else -> "Stable and balanced usage observed throughout the week."
     }
 
+    var selectedTab by remember { mutableIntStateOf(0) }
+
+    // Study Rescue Analytics integration
+    val db = remember { com.example.myapplication.data.local.BehaviorDatabase.getDatabase(context) }
+    val studyRescueRepository = remember { com.example.myapplication.data.local.StudyRescueRepository(db.studyRescueDao()) }
+    var rescueRange by remember { mutableStateOf(com.example.myapplication.data.analysis.AnalyticsTimeRange.PAST_7_DAYS) }
+    val rescueSummary by remember(rescueRange) {
+        studyRescueRepository.getAnalyticsFlow(kotlinx.coroutines.flow.flowOf(rescueRange))
+    }.collectAsState(initial = com.example.myapplication.data.analysis.StudyRescueAnalyticsSummary())
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -148,24 +158,70 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "Weekly behavior analysis",
+            text = if (selectedTab == 0) "Weekly behavior analysis" else "Study focus and rescue trends",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // Digital Usage Trend (Bar Chart)
-        AnalyticsCard(
-            title = "Digital Usage Trend",
-            subtitle = "Past 7 Days",
-            value = improvementStatus,
-            valueColor = when(improvementStatus) {
-                "Improving" -> Color(0xFF00C853)
-                "Declining" -> Color(0xFFFF5252)
-                else -> MaterialTheme.colorScheme.primary
-            }
+        // Segmented Tab Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
         ) {
+            val tabs = listOf("Digital Wellness", "Study Rescue")
+            tabs.forEachIndexed { index, title ->
+                val isSelected = selectedTab == index
+                Surface(
+                    onClick = { selectedTab = index },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    tonalElevation = if (isSelected) 2.dp else 0.dp
+                ) {
+                    Box(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        if (selectedTab == 1) {
+            StudyRescueAnalyticsDashboard(
+                summary = rescueSummary,
+                selectedRange = rescueRange,
+                onSelectRange = { rescueRange = it }
+            )
+            Spacer(modifier = Modifier.height(90.dp))
+        } else {
+            // Digital Usage Trend (Bar Chart)
+            AnalyticsCard(
+                title = "Digital Usage Trend",
+                subtitle = "Past 7 Days",
+                value = improvementStatus,
+                valueColor = when(improvementStatus) {
+                    "Improving" -> Color(0xFF00C853)
+                    "Declining" -> Color(0xFFFF5252)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+            ) {
             Column {
                 BarChartCanvas(
                     points = usagePoints,
@@ -282,6 +338,7 @@ fun TrendsHistoryScreen(innerPadding: PaddingValues) {
         }
 
         Spacer(modifier = Modifier.height(90.dp))
+        }
     }
 }
 

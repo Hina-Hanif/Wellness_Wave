@@ -77,9 +77,25 @@ class BehavioralAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ── Study Rescue Integration ─────────────────────────────────────────────
+    private val studyRescueBridge by lazy {
+        StudyRescueBehaviorBridge.getInstance(applicationContext)
+    }
+
+    // ── Focus Rescue Enforcement ─────────────────────────────────────────────
+    private val focusRescueEnforcer by lazy {
+        FocusRescueEnforcer(
+            policyProvider = { StudySessionManager.getInstance(applicationContext).policy },
+            redirectLauncher = DefaultFocusRescueRedirectLauncher { applicationContext }
+        )
+    }
+
     // ── Window / App-switch tracking ──────────────────────────────────────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString()
+
+        // 1. Existing AppSwitchTracker processing (behavioral tracking)
         when (val result = appSwitchTracker.onWindowChanged(event)) {
 
             is AppSwitchTracker.SwitchResult.NoChange -> {
@@ -93,6 +109,9 @@ class BehavioralAccessibilityService : AccessibilityService() {
                             "recent(5m)=${result.recentSwitchCount}, " +
                             "total=${appSwitchTracker.switchCount}"
                 )
+
+                // Forward to Study Rescue Bridge (only active study sessions are processed)
+                studyRescueBridge.onAppSwitched(result.from, result.to, result.recentSwitchCount)
 
                 if (appSwitchTracker.switchCount > 40) {
                     NotificationHelper.sendBehavioralAlert(
@@ -112,6 +131,10 @@ class BehavioralAccessibilityService : AccessibilityService() {
 
             is AppSwitchTracker.SwitchResult.RapidSwitchDetected -> {
                 Log.w(TAG, "Rapid switching detected! Total switches: ${result.totalSwitchCount}")
+
+                // Forward to Study Rescue Bridge (only active study sessions are processed)
+                studyRescueBridge.onRapidSwitchDetected(result.currentPackage, result.totalSwitchCount)
+
                 NotificationHelper.sendBehavioralAlert(
                     this,
                     "Focus Alert",
@@ -126,6 +149,9 @@ class BehavioralAccessibilityService : AccessibilityService() {
                 }
             }
         }
+
+        // 2. Focus Rescue Enforcement (Dedicated, logically separated from tracking)
+        focusRescueEnforcer.onWindowEvent(packageName, event.className?.toString())
     }
 
     private fun checkScreenTimeLimit() {

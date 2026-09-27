@@ -62,9 +62,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    companion object {
+        val pendingDestination = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent) // Update the intent so LaunchedEffect can see the new extras
+        intent.getStringExtra("navigate_to")?.let {
+            pendingDestination.value = it
+        }
     }
 }
 
@@ -95,7 +102,20 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
         }
     }
 
-    // Handle Deep-linking from Notification
+    // Handle deep navigation via StateFlow (from Notifications and FocusRescueEnforcer)
+    val navTarget by MainActivity.pendingDestination.collectAsState()
+    LaunchedEffect(navTarget) {
+        navTarget?.let { dest ->
+            try {
+                currentDestination = AppDestinations.valueOf(dest)
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Invalid destination: $dest")
+            }
+            MainActivity.pendingDestination.value = null
+        }
+    }
+
+    // Handle Deep-linking from Notification (legacy / cold start)
     val activity = context as? androidx.activity.ComponentActivity
     LaunchedEffect(activity?.intent) {
         val destinationStr = activity?.intent?.getStringExtra("navigate_to")
@@ -134,11 +154,20 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
         }
     }
 
+    val sessionManager = remember { com.example.myapplication.data.tracking.StudySessionManager.getInstance(context) }
+
     if (currentDestination == AppDestinations.ONBOARDING) {
         OnboardingScreen(PaddingValues(0.dp)) {
             sharedPrefs.edit().putBoolean("is_first_time", false).apply()
             currentDestination = AppDestinations.HOME
         }
+    } else if (currentDestination == AppDestinations.FOCUS_RESCUE) {
+        FocusRescueScreen(
+            sessionManager = sessionManager,
+            onExit = {
+                currentDestination = AppDestinations.MINDFULNESS
+            }
+        )
     } else {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -172,7 +201,12 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
                 AppDestinations.ANALYTICS -> BehaviorAnalyticsScreen(innerPadding)
                 AppDestinations.INSIGHTS -> AIInsightsScreen(innerPadding)
                 AppDestinations.TRENDS -> TrendsHistoryScreen(innerPadding)
-                AppDestinations.MINDFULNESS -> MindfulnessScreen(innerPadding)
+                AppDestinations.MINDFULNESS -> MindfulnessScreen(
+                    innerPadding = innerPadding,
+                    onNavigateToFocusRescue = {
+                        currentDestination = AppDestinations.FOCUS_RESCUE
+                    }
+                )
                 AppDestinations.SETTINGS -> PrivacySettingsScreen(innerPadding, isDarkTheme) { currentDestination = AppDestinations.HOME }
                 else -> HomeScreen(innerPadding) { currentDestination = AppDestinations.SETTINGS }
             }
@@ -232,6 +266,7 @@ enum class AppDestinations(
     val icon: ImageVector
 ) {
     ONBOARDING("Intro", Icons.Default.Info),
+    FOCUS_RESCUE("Focus Rescue", Icons.Default.Shield),
     HOME("Home", Icons.Default.Home),
     ANALYTICS("Analytics", Icons.Default.Timeline),
     INSIGHTS("Insights", Icons.Default.Lightbulb),
