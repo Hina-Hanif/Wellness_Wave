@@ -27,6 +27,8 @@ class ScrollTracker {
 
     private val velocitySamples = mutableListOf<Float>()
     private var lastScrollTimeMs = 0L
+    private var lastScrollX = -1
+    private var lastScrollY = -1
 
     /**
      * Call this from BehavioralAccessibilityService.onAccessibilityEvent()
@@ -62,40 +64,71 @@ class ScrollTracker {
     }
 
     /**
-     * Wipe velocity history and reset computed stats.
+     * Wipe velocity history window but maintain current average state.
      * Call after an erraticness alert fires to avoid repeated triggers.
      */
     fun reset() {
         velocitySamples.clear()
-        scrollVelocityAvgFlow.value = 0f
         scrollErraticnessFlow.value = 0f
         lastScrollTimeMs = 0L
-        Log.d(TAG, "ScrollTracker reset.")
+        lastScrollX = -1
+        lastScrollY = -1
+        Log.d(TAG, "ScrollTracker samples reset (avg retained at ${scrollVelocityAvgFlow.value}).")
     }
 
     // ── private helpers ──────────────────────────────────────────────────────
 
     /**
-     * Derive a velocity value from the event.
+     * Derive a true velocity value (px/sec) from the scroll event.
      *
-     * Strategy (same as the original BehavioralAccessibilityService):
-     *  1. Use the raw scroll deltas when non-zero.
-     *  2. Fall back to a frequency-based proxy (5000 / timeDiff) so that
-     *     events with delta == 0 (common on some devices) still contribute.
+     * Fixes:
+     *  1. Calculates real spatial delta (dx, dy) instead of raw absolute scroll position.
+     *  2. Requires a minimum time delta (10ms) to prevent division-by-near-zero spikes.
+     *  3. Clamps computed speed to a realistic human touchscreen limit (MAX_PLAUSIBLE_SPEED = 4000 px/s).
      */
     private fun computeVelocity(event: AccessibilityEvent, nowMs: Long): Float {
-        val rawDelta = (event.scrollX + event.scrollY).toFloat().let {
-            if (it < 0f) -it else it          // manual absoluteValue (no stdlib dep)
+        val currentX = event.scrollX
+        val currentY = event.scrollY
+
+        // Try using API 28+ scrollDelta if available
+        var deltaPx = 0f
+        val deltaX = event.scrollDeltaX
+        val deltaY = event.scrollDeltaY
+
+        if (deltaX != -1 || deltaY != -1) {
+            val dx = if (deltaX != -1) deltaX.toFloat() else 0f
+            val dy = if (deltaY != -1) deltaY.toFloat() else 0f
+            deltaPx = sqrt(dx * dx + dy * dy)
+        } else if (lastScrollX != -1 && lastScrollY != -1 && (currentX != -1 || currentY != -1)) {
+            val dx = (currentX - lastScrollX).toFloat()
+            val dy = (currentY - lastScrollY).toFloat()
+            deltaPx = sqrt(dx * dx + dy * dy)
         }
 
-        return when {
-            rawDelta > 0f -> rawDelta
-            lastScrollTimeMs != 0L -> {
-                val timeDiff = (nowMs - lastScrollTimeMs).coerceAtLeast(1L)
-                5_000f / timeDiff             // proxy: pixels/ms equivalent
-            }
-            else -> 0f
+        // Update position history
+        if (currentX != -1) lastScrollX = currentX
+        if (currentY != -1) lastScrollY = currentY
+
+        if (deltaPx <= 0f) {
+            return 0f
         }
+
+        if (lastScrollTimeMs == 0L) {
+            return 0f
+        }
+
+        val timeDiffMs = nowMs - lastScrollTimeMs
+        // Ignore rapid burst events (< 10 ms) to avoid near-zero time division artifacts
+        if (timeDiffMs < 10L) {
+            return 0f
+        }
+
+        // Calculate velocity in pixels per second
+        val rawVelocity = (deltaPx / (timeDiffMs / 1000f))
+
+        // Sanity Clamping: typical human touch flick/fling on high DPI screen is 500 - 3500 px/s
+        val MAX_PLAUSIBLE_SPEED = 4000f
+        return rawVelocity.coerceIn(0f, MAX_PLAUSIBLE_SPEED)
     }
 
     private fun recordVelocity(velocity: Float) {
@@ -106,6 +139,7 @@ class ScrollTracker {
     }
 
     private fun recalculateStats() {
+        if (velocitySamples.isEmpty()) return
         val avg = velocitySamples.average().toFloat()
         scrollVelocityAvgFlow.value = avg
 
@@ -120,4 +154,4 @@ class ScrollTracker {
         }
         scrollErraticnessFlow.value = erraticness
     }
-}
+}

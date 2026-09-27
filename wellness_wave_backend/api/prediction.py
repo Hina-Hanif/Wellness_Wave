@@ -129,7 +129,9 @@ def build_inference_features(raw_data: dict) -> pd.DataFrame:
     unlock_count = int(raw_data.get("unlock_count", 45))
     app_switch_count = int(raw_data.get("app_switch_count", raw_data.get("app_switches", 50)))
     typing_speed_wpm = float(raw_data.get("typing_speed_wpm", raw_data.get("typing_speed", 50.0)))
-    scroll_speed = float(raw_data.get("scroll_speed", 250.0))
+    raw_scroll_speed = float(raw_data.get("scroll_speed", 250.0))
+    # Sanity Clamping: Enforce realistic human scroll speed range (0 to 4000 px/s max)
+    scroll_speed = float(np.clip(raw_scroll_speed, 0.0, 4000.0))
     night_usage_minutes = float(raw_data.get("night_usage_minutes", raw_data.get("night_usage", 15.0)))
 
     if "social_app_minutes" in raw_data and raw_data["social_app_minutes"] is not None and not pd.isna(raw_data["social_app_minutes"]):

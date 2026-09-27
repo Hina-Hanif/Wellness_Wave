@@ -12,5 +12,5 @@ data class BehaviorRecord(
     val unlockCount: Int,
     val nightUsage: Long,
     val appSwitchCount: Int,
-    val scrollSpeed: Float
+    val scrollSpeed: Float? = null
 )
