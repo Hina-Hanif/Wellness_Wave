@@ -82,9 +82,20 @@ class BehavioralAccessibilityService : AccessibilityService() {
         StudyRescueBehaviorBridge.getInstance(applicationContext)
     }
 
+    // ── Focus Rescue Enforcement ─────────────────────────────────────────────
+    private val focusRescueEnforcer by lazy {
+        FocusRescueEnforcer(
+            policyProvider = { StudySessionManager.getInstance(applicationContext).policy },
+            redirectLauncher = DefaultFocusRescueRedirectLauncher { applicationContext }
+        )
+    }
+
     // ── Window / App-switch tracking ──────────────────────────────────────────
 
     private fun handleWindowStateChanged(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString()
+
+        // 1. Existing AppSwitchTracker processing (behavioral tracking)
         when (val result = appSwitchTracker.onWindowChanged(event)) {
 
             is AppSwitchTracker.SwitchResult.NoChange -> {
@@ -138,6 +149,9 @@ class BehavioralAccessibilityService : AccessibilityService() {
                 }
             }
         }
+
+        // 2. Focus Rescue Enforcement (Dedicated, logically separated from tracking)
+        focusRescueEnforcer.onWindowEvent(packageName, event.className?.toString())
     }
 
     private fun checkScreenTimeLimit() {

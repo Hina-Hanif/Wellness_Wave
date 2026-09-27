@@ -29,6 +29,12 @@ interface StudyRescueDao {
     @Query("SELECT * FROM study_sessions ORDER BY createdAt DESC LIMIT :limit")
     suspend fun getRecentSessions(limit: Int): List<StudySessionEntity>
 
+    @Query("SELECT * FROM study_sessions WHERE createdAt BETWEEN :startMillis AND :endMillis ORDER BY createdAt ASC")
+    suspend fun getSessionsBetween(startMillis: Long, endMillis: Long): List<StudySessionEntity>
+
+    @Query("SELECT * FROM study_sessions ORDER BY createdAt ASC")
+    suspend fun getAllSessions(): List<StudySessionEntity>
+
     // ── Intervention CRUD ───────────────────────────────────────────────────
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -45,6 +51,15 @@ interface StudyRescueDao {
 
     @Query("SELECT COUNT(*) FROM intervention_records WHERE sessionId = :sessionId AND ignored = 1")
     suspend fun getIgnoredInterventionsCount(sessionId: String): Int
+
+    @Query("SELECT * FROM intervention_records WHERE triggeredAt BETWEEN :startMillis AND :endMillis ORDER BY triggeredAt ASC")
+    suspend fun getInterventionsBetween(startMillis: Long, endMillis: Long): List<InterventionRecord>
+
+    @Query("SELECT * FROM intervention_records ORDER BY triggeredAt ASC")
+    suspend fun getAllInterventions(): List<InterventionRecord>
+
+    @Query("SELECT * FROM intervention_records ORDER BY triggeredAt DESC")
+    fun getAllInterventionsFlow(): Flow<List<InterventionRecord>>
 
     // ── Atomic Transactions ─────────────────────────────────────────────────
 
@@ -96,7 +111,8 @@ interface StudyRescueDao {
     @Transaction
     suspend fun escalateToFocusRescue(
         sessionId: String,
-        startTime: Long
+        startTime: Long,
+        endTime: Long? = null
     ): Boolean {
         val session = getSessionById(sessionId) ?: return false
         val ignoredCount = getIgnoredInterventionsCount(sessionId)
@@ -104,10 +120,13 @@ interface StudyRescueDao {
             return false // Focus Rescue requires at least 2 ignored interventions
         }
 
+        val calculatedEndTime = endTime ?: (startTime + session.plannedDurationMillis)
+
         updateSession(
             session.copy(
                 currentState = "FOCUS_RESCUE_ACTIVE",
                 focusRescueStartTime = startTime,
+                focusRescueEndTime = calculatedEndTime,
                 focusRescueState = "ACTIVE",
                 updatedAt = startTime
             )
@@ -119,9 +138,13 @@ interface StudyRescueDao {
     suspend fun exitFocusRescue(
         sessionId: String,
         endTime: Long,
-        reason: String
+        reason: String,
+        cooldownUntil: Long? = null
     ): Boolean {
         val session = getSessionById(sessionId) ?: return false
+        if (session.currentState != "FOCUS_RESCUE_ACTIVE") {
+            return false
+        }
         updateSession(
             session.copy(
                 currentState = "SESSION_ACTIVE",
@@ -129,7 +152,32 @@ interface StudyRescueDao {
                 focusRescueState = "EXITED",
                 focusRescueExitReason = reason,
                 focusRescueCompletedAt = endTime,
+                cooldownUntil = cooldownUntil,
                 updatedAt = endTime
+            )
+        )
+        return true
+    }
+
+    @Transaction
+    suspend fun completeFocusRescue(
+        sessionId: String,
+        completedAt: Long,
+        cooldownUntil: Long? = null
+    ): Boolean {
+        val session = getSessionById(sessionId) ?: return false
+        if (session.currentState != "FOCUS_RESCUE_ACTIVE") {
+            return false
+        }
+        updateSession(
+            session.copy(
+                currentState = "SESSION_ACTIVE",
+                focusRescueEndTime = completedAt,
+                focusRescueState = "COMPLETED",
+                focusRescueExitReason = "COMPLETED",
+                focusRescueCompletedAt = completedAt,
+                cooldownUntil = cooldownUntil,
+                updatedAt = completedAt
             )
         )
         return true
@@ -141,10 +189,12 @@ interface StudyRescueDao {
         endTime: Long
     ): Boolean {
         val session = getSessionById(sessionId) ?: return false
+        val newFocusRescueState = if (session.currentState == "FOCUS_RESCUE_ACTIVE") "COMPLETED" else session.focusRescueState
         updateSession(
             session.copy(
                 currentState = "SESSION_COMPLETED",
                 endTimeMillis = endTime,
+                focusRescueState = newFocusRescueState,
                 updatedAt = endTime
             )
         )
@@ -157,10 +207,12 @@ interface StudyRescueDao {
         cancelTime: Long
     ): Boolean {
         val session = getSessionById(sessionId) ?: return false
+        val newFocusRescueState = if (session.currentState == "FOCUS_RESCUE_ACTIVE") "CANCELLED" else session.focusRescueState
         updateSession(
             session.copy(
                 currentState = "SESSION_CANCELLED",
                 endTimeMillis = cancelTime,
+                focusRescueState = newFocusRescueState,
                 updatedAt = cancelTime
             )
         )

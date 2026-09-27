@@ -33,6 +33,14 @@ class StudyRescueRepository(private val studyRescueDao: StudyRescueDao) {
         studyRescueDao.getRecentSessions(limit)
     }
 
+    suspend fun getSessionsBetween(startMillis: Long, endMillis: Long): List<StudySessionEntity> = withContext(Dispatchers.IO) {
+        studyRescueDao.getSessionsBetween(startMillis, endMillis)
+    }
+
+    suspend fun getAllSessions(): List<StudySessionEntity> = withContext(Dispatchers.IO) {
+        studyRescueDao.getAllSessions()
+    }
+
     suspend fun insertIntervention(intervention: InterventionRecord): Long = withContext(Dispatchers.IO) {
         studyRescueDao.insertIntervention(intervention)
     }
@@ -47,6 +55,32 @@ class StudyRescueRepository(private val studyRescueDao: StudyRescueDao) {
 
     suspend fun getIgnoredInterventionsCount(sessionId: String): Int = withContext(Dispatchers.IO) {
         studyRescueDao.getIgnoredInterventionsCount(sessionId)
+    }
+
+    suspend fun getInterventionsBetween(startMillis: Long, endMillis: Long): List<InterventionRecord> = withContext(Dispatchers.IO) {
+        studyRescueDao.getInterventionsBetween(startMillis, endMillis)
+    }
+
+    suspend fun getAllInterventions(): List<InterventionRecord> = withContext(Dispatchers.IO) {
+        studyRescueDao.getAllInterventions()
+    }
+
+    fun getAllInterventionsFlow(): Flow<List<InterventionRecord>> {
+        return studyRescueDao.getAllInterventionsFlow()
+    }
+
+    fun getAnalyticsFlow(timeRangeFlow: Flow<com.example.myapplication.data.analysis.AnalyticsTimeRange>): Flow<com.example.myapplication.data.analysis.StudyRescueAnalyticsSummary> {
+        return kotlinx.coroutines.flow.combine(
+            getAllSessionsFlow(),
+            getAllInterventionsFlow(),
+            timeRangeFlow
+        ) { sessions, interventions, range ->
+            com.example.myapplication.data.analysis.StudyRescueAnalyticsEngine.calculateSummary(
+                allSessions = sessions,
+                allInterventions = interventions,
+                timeRange = range
+            )
+        }
     }
 
     suspend fun recordInterventionAndAdvanceSession(
@@ -74,12 +108,29 @@ class StudyRescueRepository(private val studyRescueDao: StudyRescueDao) {
         )
     }
 
-    suspend fun escalateToFocusRescue(sessionId: String, startTime: Long): Boolean = withContext(Dispatchers.IO) {
-        studyRescueDao.escalateToFocusRescue(sessionId, startTime)
+    suspend fun escalateToFocusRescue(
+        sessionId: String,
+        startTime: Long,
+        endTime: Long? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        studyRescueDao.escalateToFocusRescue(sessionId, startTime, endTime)
     }
 
-    suspend fun exitFocusRescue(sessionId: String, endTime: Long, reason: String): Boolean = withContext(Dispatchers.IO) {
-        studyRescueDao.exitFocusRescue(sessionId, endTime, reason)
+    suspend fun exitFocusRescue(
+        sessionId: String,
+        endTime: Long,
+        reason: String,
+        cooldownUntil: Long? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        studyRescueDao.exitFocusRescue(sessionId, endTime, reason, cooldownUntil)
+    }
+
+    suspend fun completeFocusRescue(
+        sessionId: String,
+        completedAt: Long,
+        cooldownUntil: Long? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        studyRescueDao.completeFocusRescue(sessionId, completedAt, cooldownUntil)
     }
 
     suspend fun completeSession(sessionId: String, endTime: Long): Boolean = withContext(Dispatchers.IO) {

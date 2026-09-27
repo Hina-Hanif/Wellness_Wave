@@ -96,6 +96,11 @@ class StudySessionManager internal constructor(
                     ignoredInterventions = ignoredStrikes
                 )
 
+                val now = System.currentTimeMillis()
+                if (targetState == StudyRescueState.FOCUS_RESCUE_ACTIVE) {
+                    focusRescueController.restoreFromSession(session, now)
+                }
+
                 if (!isPaused && remaining > 0L) {
                     startTicker()
                 } else if (remaining <= 0L && !isPaused) {
@@ -225,6 +230,7 @@ class StudySessionManager internal constructor(
 
         val sessionId = _activeSessionFlow.value?.sessionId
         _activeSessionFlow.value = null
+        focusRescueController.clearFocusRescue()
 
         if (sessionId != null) {
             notifier.cancelNotification(sessionId)
@@ -249,6 +255,7 @@ class StudySessionManager internal constructor(
 
         val sessionId = _activeSessionFlow.value?.sessionId
         _activeSessionFlow.value = null
+        focusRescueController.clearFocusRescue()
 
         if (sessionId != null) {
             notifier.cancelNotification(sessionId)
@@ -257,6 +264,57 @@ class StudySessionManager internal constructor(
             }
         }
         return true
+    }
+
+    /**
+     * Central Focus Rescue controller instance using persisted absolute timestamps.
+     */
+    val focusRescueController: FocusRescueController by lazy {
+        DefaultFocusRescueController(
+            sessionManagerProvider = { this },
+            repository = repository
+        )
+    }
+
+    internal fun updateActiveSessionDirectly(entity: StudySessionEntity) {
+        _activeSessionFlow.value = entity
+    }
+
+    /**
+     * Activates Focus Rescue escalation mode.
+     * Allowed only when currentState is FOCUS_RESCUE_READY (i.e. after 2 ignored interventions).
+     */
+    fun startFocusRescue(): Boolean = synchronized(sessionLock) {
+        val result = focusRescueController.startFocusRescue()
+        if (result is FocusRescueStartResult.Success) {
+            val sessionId = _activeSessionFlow.value?.sessionId
+            if (sessionId != null) {
+                notifier.cancelNotification(sessionId)
+            }
+            return true
+        }
+        return false
+    }
+
+    /**
+     * Exits Focus Rescue escalation mode back to standard SESSION_ACTIVE.
+     */
+    fun exitFocusRescue(reason: String = "USER_REQUESTED"): Boolean = synchronized(sessionLock) {
+        return focusRescueController.exitFocusRescue(reason)
+    }
+
+    /**
+     * Completes Focus Rescue escalation mode idempotently.
+     */
+    fun completeFocusRescue(): Boolean = synchronized(sessionLock) {
+        return focusRescueController.completeFocusRescue()
+    }
+
+    /**
+     * Central Focus Rescue restriction policy instance.
+     */
+    val policy: StudyRescuePolicy by lazy {
+        DefaultStudyRescuePolicy(sessionManagerProvider = { this })
     }
 
     /**
@@ -494,6 +552,10 @@ class StudySessionManager internal constructor(
                 if (stateMachine.state == StudyRescueState.SESSION_PAUSED) continue
 
                 val now = System.currentTimeMillis()
+                if (stateMachine.state == StudyRescueState.FOCUS_RESCUE_ACTIVE) {
+                    focusRescueController.checkAndHandleExpiration(now)
+                }
+
                 val totalPlannedSec = session.plannedDurationMillis / 1000L
                 val elapsedSec = ((now - session.startTimeMillis) / 1000L).coerceAtLeast(0L)
                 val remainingSec = (totalPlannedSec - elapsedSec).coerceAtLeast(0L)
@@ -532,30 +594,11 @@ class StudySessionManager internal constructor(
      * Guarantees emergency dialer, settings, and system UI can never be marked restricted.
      */
     private fun sanitizePackageNames(apps: Set<String>): Set<String> {
-        return apps
-            .map { it.trim() }
-            .filter { pkg ->
-                pkg.isNotEmpty() &&
-                pkg.contains(".") &&
-                !isProtectedPackage(pkg)
-            }
-            .toSet()
+        return PackageNameValidator.sanitizeRestrictedPackages(apps)
     }
 
     private fun isProtectedPackage(pkg: String): Boolean {
-        val lower = pkg.lowercase()
-        return lower == "com.android.phone" ||
-                lower == "com.google.android.dialer" ||
-                lower == "com.samsung.android.dialer" ||
-                lower == "com.android.server.telecom" ||
-                lower == "com.android.systemui" ||
-                lower == "android" ||
-                lower == "com.android.settings" ||
-                lower == "com.example.myapplication" ||
-                lower.contains("emergency") ||
-                lower.contains("launcher") ||
-                lower.contains("keyboard") ||
-                lower.contains("inputmethod")
+        return PackageNameValidator.isProtectedPackage(pkg)
     }
 
     companion object {

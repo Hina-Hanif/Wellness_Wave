@@ -358,4 +358,24 @@ class FakeStudyRescueDao : StudyRescueDao {
     override suspend fun getIgnoredInterventionsCount(sessionId: String): Int {
         return interventions.count { it.sessionId == sessionId && it.ignored }
     }
+
+    override suspend fun getSessionsBetween(startMillis: Long, endMillis: Long): List<StudySessionEntity> {
+        return sessions.values.filter { it.createdAt in startMillis..endMillis }.sortedBy { it.createdAt }
+    }
+
+    override suspend fun getAllSessions(): List<StudySessionEntity> {
+        return sessions.values.sortedBy { it.createdAt }
+    }
+
+    override suspend fun getInterventionsBetween(startMillis: Long, endMillis: Long): List<InterventionRecord> {
+        return interventions.filter { it.triggeredAt in startMillis..endMillis }.sortedBy { it.triggeredAt }
+    }
+
+    override suspend fun getAllInterventions(): List<InterventionRecord> {
+        return interventions.sortedBy { it.triggeredAt }
+    }
+
+    override fun getAllInterventionsFlow(): kotlinx.coroutines.flow.Flow<List<InterventionRecord>> {
+        return kotlinx.coroutines.flow.flowOf(interventions.sortedByDescending { it.triggeredAt })
+    }
 }

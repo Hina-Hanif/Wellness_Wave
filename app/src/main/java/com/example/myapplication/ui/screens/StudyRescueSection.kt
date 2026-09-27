@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.data.tracking.StudyRescueState
@@ -30,6 +31,7 @@ import java.util.Locale
 @Composable
 fun StudyRescueSection(
     sessionManager: StudySessionManager,
+    onNavigateToFocusRescue: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by sessionManager.stateFlow.collectAsState()
@@ -45,7 +47,7 @@ fun StudyRescueSection(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 22.dp)) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -110,7 +112,12 @@ fun StudyRescueSection(
                     onPause = { sessionManager.pauseSession() },
                     onResume = { sessionManager.resumeSession() },
                     onComplete = { sessionManager.completeSession() },
-                    onCancel = { sessionManager.cancelSession() }
+                    onCancel = { sessionManager.cancelSession() },
+                    onStartFocusRescue = {
+                        sessionManager.startFocusRescue()
+                        onNavigateToFocusRescue()
+                    },
+                    onOpenFocusRescue = onNavigateToFocusRescue
                 )
             }
         }
@@ -168,9 +175,10 @@ private fun StudySessionSetupContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf(15, 25, 45, 60).forEach { mins ->
                 val isSelected = selectedDuration == mins
@@ -181,7 +189,8 @@ private fun StudySessionSetupContent(
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = MaterialTheme.colorScheme.primary,
                         selectedLabelColor = Color.Black
-                    )
+                    ),
+                    shape = RoundedCornerShape(16.dp)
                 )
             }
         }
@@ -249,6 +258,46 @@ private fun StudySessionSetupContent(
                 fontSize = 15.sp
             )
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        var showAnalytics by remember { mutableStateOf(false) }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val db = remember { com.example.myapplication.data.local.BehaviorDatabase.getDatabase(context) }
+        val repository = remember { com.example.myapplication.data.local.StudyRescueRepository(db.studyRescueDao()) }
+        var range by remember { mutableStateOf(com.example.myapplication.data.analysis.AnalyticsTimeRange.PAST_7_DAYS) }
+        val summary by remember(range) {
+            repository.getAnalyticsFlow(kotlinx.coroutines.flow.flowOf(range))
+        }.collectAsState(initial = com.example.myapplication.data.analysis.StudyRescueAnalyticsSummary())
+
+        OutlinedButton(
+            onClick = { showAnalytics = !showAnalytics },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+        ) {
+            Icon(
+                imageVector = if (showAnalytics) Icons.Rounded.ExpandLess else Icons.Rounded.Analytics,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (showAnalytics) "Hide Focus Analytics" else "View Focus Rescue Analytics",
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+
+        AnimatedVisibility(visible = showAnalytics) {
+            Column(modifier = Modifier.padding(top = 16.dp)) {
+                StudyRescueAnalyticsDashboard(
+                    summary = summary,
+                    selectedRange = range,
+                    onSelectRange = { range = it }
+                )
+            }
+        }
     }
 }
 
@@ -267,7 +316,9 @@ private fun ActiveSessionContent(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onComplete: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onStartFocusRescue: () -> Unit = {},
+    onOpenFocusRescue: () -> Unit = {}
 ) {
     val totalSeconds = (plannedMinutes * 60).coerceAtLeast(1)
     val progress = (elapsedSeconds.toFloat() / totalSeconds.toFloat()).coerceIn(0f, 1f)
@@ -358,31 +409,149 @@ private fun ActiveSessionContent(
             )
         }
 
-        AnimatedVisibility(visible = isFocusRescueEligible) {
+        AnimatedVisibility(visible = isFocusRescueEligible && state != StudyRescueState.FOCUS_RESCUE_ACTIVE) {
             Column {
                 Spacer(modifier = Modifier.height(14.dp))
                 Surface(
-                    color = Color(0xFFFF5252).copy(alpha = 0.15f),
+                    color = Color(0xFFFF5252).copy(alpha = 0.12f),
                     shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.3f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Shield,
-                            contentDescription = null,
-                            tint = Color(0xFFFF5252),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Focus Rescue Ready — 2 strikes recorded",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFF5252)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFF5252).copy(alpha = 0.2f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Shield,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF5252),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Focus Rescue Ready",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF5252),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = "2 strikes recorded • Escalation eligible",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onStartFocusRescue,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text(
+                                text = "Activate",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        AnimatedVisibility(visible = state == StudyRescueState.FOCUS_RESCUE_ACTIVE) {
+            Column {
+                Spacer(modifier = Modifier.height(14.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Shield,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Focus Rescue Active",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = "Distraction Shield Enabled",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onOpenFocusRescue,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text(
+                                text = "View",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
             }
@@ -393,51 +562,110 @@ private fun ActiveSessionContent(
         // Control Buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (state == StudyRescueState.SESSION_PAUSED) {
                 Button(
                     onClick = onResume,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Resume", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Resume",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = MaterialTheme.typography.titleSmall
+                    )
                 }
             } else {
                 OutlinedButton(
                     onClick = onPause,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Default.Pause, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Pause", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Icon(
+                        Icons.Default.Pause,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Pause",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        style = MaterialTheme.typography.titleSmall
+                    )
                 }
             }
 
             Button(
                 onClick = onComplete,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-            ) {
-                Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Complete", color = Color.White, fontWeight = FontWeight.Bold)
-            }
-
-            IconButton(
-                onClick = onCancel,
                 modifier = Modifier
-                    .background(Color.White.copy(alpha = 0.08f), CircleShape)
-                    .size(44.dp)
+                    .weight(1f)
+                    .height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Cancel Session", tint = Color.White)
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Complete",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    style = MaterialTheme.typography.titleSmall
+                )
             }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        TextButton(
+            onClick = onCancel,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp),
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Cancel Session",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
         }
     }
 }
@@ -465,7 +693,9 @@ private fun StatusPill(state: StudyRescueState) {
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = textColor
+            color = textColor,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -483,20 +713,24 @@ private fun StatPill(
         color = if (isHighlighted) Color(0xFFFF5252).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.06f)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (isHighlighted) Color(0xFFFF5252) else MaterialTheme.colorScheme.onSurface
+                color = if (isHighlighted) Color(0xFFFF5252) else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
