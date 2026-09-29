@@ -60,6 +60,8 @@ dependencies {
     implementation(libs.converter.gson)
     implementation(libs.mpandroidchart)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.revenuecat.purchases)
+    implementation(libs.revenuecat.purchases.ui)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
