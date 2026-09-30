@@ -26,9 +26,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.data.revenuecat.RevenueCatManager
+import com.revenuecat.purchases.CustomerInfo
 import com.revenuecat.purchases.Package
 import com.revenuecat.purchases.PurchasesErrorCode
 import com.revenuecat.purchases.PurchasesException
+import com.revenuecat.purchases.models.StoreTransaction
+import com.revenuecat.purchases.ui.revenuecatui.PaywallDialog
+import com.revenuecat.purchases.ui.revenuecatui.PaywallDialogOptions
+import com.revenuecat.purchases.ui.revenuecatui.PaywallListener
 import kotlinx.coroutines.launch
 
 /**
@@ -53,6 +58,29 @@ fun WellnessProPaywallScreen(
     var isRestoring by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDashboardPaywall by remember { mutableStateOf(false) }
+
+    if (showDashboardPaywall) {
+        PaywallDialog(
+            PaywallDialogOptions.Builder()
+                .setDismissRequest { showDashboardPaywall = false }
+                .setListener(object : PaywallListener {
+                    override fun onPurchaseCompleted(customerInfo: CustomerInfo, storeTransaction: StoreTransaction) {
+                        showDashboardPaywall = false
+                        if (RevenueCatManager.checkEntitlementActive(customerInfo)) {
+                            onPurchaseSuccess()
+                        }
+                    }
+                    override fun onRestoreCompleted(customerInfo: CustomerInfo) {
+                        showDashboardPaywall = false
+                        if (RevenueCatManager.checkEntitlementActive(customerInfo)) {
+                            onPurchaseSuccess()
+                        }
+                    }
+                })
+                .build()
+        )
+    }
 
     // If entitlement becomes active at any point, immediately trigger unlock callback
     LaunchedEffect(isProActive) {
@@ -325,44 +353,8 @@ fun WellnessProPaywallScreen(
             // CTA: Start Wellness Pro Button
             Button(
                 onClick = {
-                    val activity = context as? Activity
-                    val pkg = monthlyPackage
-                    if (activity == null) {
-                        errorMessage = "Cannot initiate purchase: Activity context unavailable."
-                        return@Button
-                    }
-                    if (pkg == null) {
-                        errorMessage = "Plan details are still loading. Please check your connection and retry."
-                        return@Button
-                    }
-
-                    isPurchasing = true
-                    errorMessage = null
-                    statusMessage = null
-
-                    scope.launch {
-                        val result = RevenueCatManager.purchasePackage(activity, pkg)
-                        isPurchasing = false
-
-                        result.onSuccess { customerInfo ->
-                            val isEntitled = RevenueCatManager.checkEntitlementActive(customerInfo)
-                            if (isEntitled) {
-                                statusMessage = "Welcome to Wellness Pro! Study Rescue unlocked."
-                                onPurchaseSuccess()
-                            } else {
-                                errorMessage = "Purchase processed, but Pro entitlement is pending. Please try 'Restore Purchases'."
-                            }
-                        }.onFailure { err ->
-                            if (err is PurchasesException && err.code == PurchasesErrorCode.PurchaseCancelledError) {
-                                // User cancelled the purchase dialog gracefully
-                                statusMessage = "Purchase cancelled."
-                            } else {
-                                errorMessage = err.message ?: "Purchase could not be completed."
-                            }
-                        }
-                    }
+                    showDashboardPaywall = true
                 },
-                enabled = !isPurchasing && !isRestoring && !isLoadingOffering,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),

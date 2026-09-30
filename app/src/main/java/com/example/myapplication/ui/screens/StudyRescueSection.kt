@@ -24,6 +24,11 @@ import androidx.compose.ui.unit.sp
 import com.example.myapplication.data.tracking.StudyRescueState
 import com.example.myapplication.data.tracking.StudySessionManager
 import com.example.myapplication.data.revenuecat.RevenueCatManager
+import com.revenuecat.purchases.CustomerInfo
+import com.revenuecat.purchases.models.StoreTransaction
+import com.revenuecat.purchases.ui.revenuecatui.PaywallDialog
+import com.revenuecat.purchases.ui.revenuecatui.PaywallDialogOptions
+import com.revenuecat.purchases.ui.revenuecatui.PaywallListener
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
@@ -48,9 +53,28 @@ fun StudyRescueSection(
 
     // RevenueCat Entitlement Check for "wellness_pro"
     val isProActive by RevenueCatManager.isProActiveFlow.collectAsState()
+    var showRevenueCatPaywall by remember { mutableStateOf(false) }
+
+    if (showRevenueCatPaywall) {
+        PaywallDialog(
+            PaywallDialogOptions.Builder()
+                .setDismissRequest { showRevenueCatPaywall = false }
+                .setListener(object : PaywallListener {
+                    override fun onPurchaseCompleted(customerInfo: CustomerInfo, storeTransaction: StoreTransaction) {
+                        showRevenueCatPaywall = false
+                        RevenueCatManager.refreshCustomerInfo()
+                    }
+                    override fun onRestoreCompleted(customerInfo: CustomerInfo) {
+                        showRevenueCatPaywall = false
+                        RevenueCatManager.refreshCustomerInfo()
+                    }
+                })
+                .build()
+        )
+    }
 
     fun openPaywall() {
-        onNavigateToPaywall()
+        showRevenueCatPaywall = true
     }
 
     Card(
