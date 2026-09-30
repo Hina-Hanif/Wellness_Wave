@@ -3,6 +3,7 @@ package com.example.myapplication.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.data.tracking.StudyRescueState
 import com.example.myapplication.data.tracking.StudySessionManager
+import com.example.myapplication.data.revenuecat.RevenueCatManager
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 
 /**
@@ -32,6 +36,7 @@ import java.util.Locale
 fun StudyRescueSection(
     sessionManager: StudySessionManager,
     onNavigateToFocusRescue: () -> Unit = {},
+    onNavigateToPaywall: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val state by sessionManager.stateFlow.collectAsState()
@@ -40,6 +45,13 @@ fun StudyRescueSection(
     val elapsedSeconds by sessionManager.elapsedSecondsFlow.collectAsState()
 
     val isOngoing = sessionManager.isSessionActive()
+
+    // RevenueCat Entitlement Check for "wellness_pro"
+    val isProActive by RevenueCatManager.isProActiveFlow.collectAsState()
+
+    fun openPaywall() {
+        onNavigateToPaywall()
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -54,7 +66,10 @@ fun StudyRescueSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
@@ -86,13 +101,48 @@ fun StudyRescueSection(
 
                 if (isOngoing) {
                     StatusPill(state = state)
+                } else if (isProActive) {
+                    Surface(
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .clickable { openPaywall() },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.WorkspacePremium,
+                                contentDescription = "View Pro",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "PRO",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            if (!isOngoing) {
-                // Setup Mode
+            if (!isProActive) {
+                // Free User: Show Premium Locked Card
+                LockedStudyRescueCard(
+                    onUnlockClicked = { openPaywall() }
+                )
+            } else if (!isOngoing) {
+                // Pro User - Setup Mode: Direct access to the complete Study Rescue setup and analytics
                 StudySessionSetupContent(
                     onStartSession = { title, duration, apps ->
                         sessionManager.startSession(title, duration, apps)
@@ -233,16 +283,10 @@ private fun StudySessionSetupContent(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        var isStarting by remember { mutableStateOf(false) }
-
         Button(
             onClick = {
-                if (!isStarting) {
-                    isStarting = true
-                    onStartSession(taskTitle, selectedDuration, selectedAppPackages)
-                }
+                onStartSession(taskTitle, selectedDuration, selectedAppPackages)
             },
-            enabled = !isStarting,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -731,6 +775,148 @@ private fun StatPill(
                 color = if (isHighlighted) Color(0xFFFF5252) else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * Locked preview card displayed to Free Users when Study Rescue is locked.
+ * Features responsive pills and single-line button text that will not wrap awkwardly.
+ */
+@Composable
+fun LockedStudyRescueCard(
+    onUnlockClicked: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                modifier = Modifier.size(52.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Lock,
+                        contentDescription = "Locked Feature",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Study Rescue is a Pro Feature",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Eliminate phone distractions during deep study blocks with intelligent app redirection and focus analytics.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                lineHeight = 18.sp,
+                modifier = Modifier.padding(horizontal = 6.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Responsive flow of feature pills (prevents awkward character wrapping)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ProFeatureBadge(icon = Icons.Rounded.Shield, label = "App Block")
+                ProFeatureBadge(icon = Icons.Rounded.Timeline, label = "Analytics")
+                ProFeatureBadge(icon = Icons.Rounded.Bolt, label = "AI Rescue")
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = onUnlockClicked,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.Black
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.WorkspacePremium,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Unlock with Wellness Pro",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.Black,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProFeatureBadge(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

@@ -32,7 +32,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun MindfulnessScreen(
     innerPadding: PaddingValues,
-    onNavigateToFocusRescue: () -> Unit = {}
+    onNavigateToFocusRescue: () -> Unit = {},
+    onNavigateToPaywall: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -113,7 +114,8 @@ fun MindfulnessScreen(
             val sessionManager = remember { com.example.myapplication.data.tracking.StudySessionManager.getInstance(context) }
             StudyRescueSection(
                 sessionManager = sessionManager,
-                onNavigateToFocusRescue = onNavigateToFocusRescue
+                onNavigateToFocusRescue = onNavigateToFocusRescue,
+                onNavigateToPaywall = onNavigateToPaywall
             )
 
             Spacer(modifier = Modifier.height(32.dp))

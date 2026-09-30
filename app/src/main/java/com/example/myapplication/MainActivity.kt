@@ -168,6 +168,15 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
                 currentDestination = AppDestinations.MINDFULNESS
             }
         )
+    } else if (currentDestination == AppDestinations.PAYWALL) {
+        WellnessProPaywallScreen(
+            onDismiss = {
+                currentDestination = AppDestinations.MINDFULNESS
+            },
+            onPurchaseSuccess = {
+                currentDestination = AppDestinations.MINDFULNESS
+            }
+        )
     } else {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -205,6 +214,9 @@ fun WellnessWaveApp(isDarkTheme: MutableState<Boolean>) {
                     innerPadding = innerPadding,
                     onNavigateToFocusRescue = {
                         currentDestination = AppDestinations.FOCUS_RESCUE
+                    },
+                    onNavigateToPaywall = {
+                        currentDestination = AppDestinations.PAYWALL
                     }
                 )
                 AppDestinations.SETTINGS -> PrivacySettingsScreen(innerPadding, isDarkTheme) { currentDestination = AppDestinations.HOME }
@@ -272,5 +284,6 @@ enum class AppDestinations(
     INSIGHTS("Insights", Icons.Default.Lightbulb),
     TRENDS("Trends", Icons.Default.DateRange), 
     MINDFULNESS("Wellness", Icons.Default.SelfImprovement),
-    SETTINGS("Settings", Icons.Default.Settings)
+    SETTINGS("Settings", Icons.Default.Settings),
+    PAYWALL("Pro", Icons.Default.WorkspacePremium)
 }

@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StudySessionEntity::class,
         InterventionRecord::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(StudyRescueConverters::class)
@@ -27,6 +27,27 @@ abstract class BehaviorDatabase : RoomDatabase() {
         private var INSTANCE: BehaviorDatabase? = null
 
         private fun createStudyRescueTables(database: SupportSQLiteDatabase) {
+            // Reconcile behavior_records table schema to exact Room entity expectations
+            database.execSQL("""
+                CREATE TABLE IF NOT EXISTS `behavior_records_migrated` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `timestamp` INTEGER NOT NULL,
+                    `screenTime` INTEGER NOT NULL,
+                    `unlockCount` INTEGER NOT NULL,
+                    `nightUsage` INTEGER NOT NULL,
+                    `appSwitchCount` INTEGER NOT NULL DEFAULT 0,
+                    `scrollSpeed` REAL
+                )
+            """.trimIndent())
+            try {
+                database.execSQL("""
+                    INSERT OR IGNORE INTO `behavior_records_migrated` (`id`, `timestamp`, `screenTime`, `unlockCount`, `nightUsage`, `scrollSpeed`)
+                    SELECT `id`, `timestamp`, `screenTime`, `unlockCount`, `nightUsage`, `scrollSpeed` FROM `behavior_records`
+                """.trimIndent())
+            } catch (ignored: Exception) {}
+            database.execSQL("DROP TABLE IF EXISTS `behavior_records`")
+            database.execSQL("ALTER TABLE `behavior_records_migrated` RENAME TO `behavior_records`")
+
             // Drop any legacy prototype tables to guarantee clean schema migration
             database.execSQL("DROP TABLE IF EXISTS `intervention_records`")
             database.execSQL("DROP TABLE IF EXISTS `study_sessions`")
@@ -152,6 +173,36 @@ abstract class BehaviorDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createStudyRescueTables(db)
+            }
+        }
+
+        val MIGRATION_4_6 = object : Migration(4, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createStudyRescueTables(db)
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createStudyRescueTables(db)
+            }
+        }
+
+        val MIGRATION_3_6 = object : Migration(3, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createStudyRescueTables(db)
+            }
+        }
+
+        val MIGRATION_2_6 = object : Migration(2, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createStudyRescueTables(db)
+            }
+        }
+
         fun getDatabase(context: Context): BehaviorDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -159,8 +210,12 @@ abstract class BehaviorDatabase : RoomDatabase() {
                     BehaviorDatabase::class.java,
                     "behavior_database"
                 )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_2_4)
-                .fallbackToDestructiveMigration()
+                .addMigrations(
+                    MIGRATION_2_3, MIGRATION_3_4, MIGRATION_2_4, MIGRATION_4_5,
+                    MIGRATION_4_6, MIGRATION_5_6, MIGRATION_3_6, MIGRATION_2_6
+                )
+                .fallbackToDestructiveMigration(true)
+                .fallbackToDestructiveMigrationOnDowngrade(true)
                 .build()
                 INSTANCE = instance
                 instance

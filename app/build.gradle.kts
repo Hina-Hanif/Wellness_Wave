@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -17,6 +20,19 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Securely read RevenueCat API key from local.properties or environment variable
+        val localProperties = Properties()
+        val localPropertiesFile = project.rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            FileInputStream(localPropertiesFile).use { localProperties.load(it) }
+        }
+        val revenueCatApiKey = localProperties.getProperty("revenuecat.apiKey")
+            ?: localProperties.getProperty("REVENUECAT_API_KEY")
+            ?: System.getenv("REVENUECAT_API_KEY")
+            ?: "test_store_placeholder_key"
+
+        buildConfigField("String", "REVENUECAT_API_KEY", "\"$revenueCatApiKey\"")
     }
 
     buildTypes {
@@ -34,6 +50,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
